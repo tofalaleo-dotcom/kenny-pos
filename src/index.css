@@ -1,0 +1,2 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Lao:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+*{box-sizing:border-box} html,body,#root{min-height:100%;width:100%;overflow-x:hidden} body{margin:0;background:#f6f8fb;color:#1d2a45;font-family:'Noto Sans Lao','Segoe UI',sans-serif;font-size:14px} button,input{font:inherit} button{cursor:pointer} #root{min-height:100vh}
