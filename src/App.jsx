@@ -597,6 +597,27 @@ function AccessStatusScreen({ profile }) {
   return <main className="auth-page"><section className="auth-card"><div className="auth-logo"><span className="brand-mark">K</span><div><strong>kennyXpay</strong><small>ກວດສອບສິດເຂົ້າໃຊ້</small></div></div><h1>{blocked ? 'ບັນຊີຖືກປິດໃຊ້ງານ' : 'ລໍຖ້າ owner ອະນຸມັດ'}</h1><p>{blocked ? 'ກະລຸນາຕິດຕໍ່ owner ຂອງຮ້ານ.' : 'ບັນຊີນີ້ສະໝັກແລ້ວ ແຕ່ຍັງບໍ່ມີສິດເຂົ້າ POS. Owner ຕ້ອງອະນຸມັດແລະເລືອກ role ກ່ອນ.'}</p><button className="primary wide" onClick={() => supabase?.auth.signOut()}>ອອກຈາກລະບົບ</button></section></main>
 }
 
+const defaultPendingProfile = (user) => ({
+  id: user.id,
+  email: user.email,
+  role: 'worker',
+  status: 'pending',
+})
+
+async function loadProfileForUser(user) {
+  const fallback = defaultPendingProfile(user)
+  const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
+  if (!error && data) return data
+
+  const { data: created } = await supabase
+    .from('profiles')
+    .upsert(fallback, { onConflict: 'id' })
+    .select('*')
+    .single()
+
+  return created || fallback
+}
+
 function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState({ role: 'worker', status: 'pending' })
@@ -610,8 +631,7 @@ function App() {
       const { data } = await supabase.auth.getSession()
       setSession(data.session)
       if (data.session?.user) {
-        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', data.session.user.id).maybeSingle()
-        setProfile(profileData || { id: data.session.user.id, email: data.session.user.email, role: 'worker', status: 'pending' })
+        setProfile(await loadProfileForUser(data.session.user))
       }
       setLoading(false)
     }
@@ -620,8 +640,9 @@ function App() {
       setSession(nextSession)
       setOwnerPosMode(false)
       if (nextSession?.user) {
-        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', nextSession.user.id).maybeSingle()
-        setProfile(profileData || { id: nextSession.user.id, email: nextSession.user.email, role: 'worker', status: 'pending' })
+        setProfile(await loadProfileForUser(nextSession.user))
+      } else {
+        setProfile({ role: 'worker', status: 'pending' })
       }
     })
     return () => subscription.unsubscribe()
