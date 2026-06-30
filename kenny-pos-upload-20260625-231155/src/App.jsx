@@ -41,7 +41,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   const lowItems = products.filter((p) => p.stock >= 1 && p.stock <= 5)
   const outItems = products.filter((p) => p.stock <= 0)
   const alertCount = lowItems.length + outItems.length
-  const canManage = role === 'owner'
+  const canManage = role === 'owner' || role === 'admin'
   const todayLabel = useMemo(() => {
     const now = new Date()
     return `${laoWeekdays[now.getDay()]}, ${now.getDate()} ${laoMonths[now.getMonth()]} ${now.getFullYear()}`
@@ -496,7 +496,9 @@ function CustomerDisplay() {
 function OwnerDashboard({ user, onOpenPos }) {
   const [products, setProducts] = useState([])
   const [orders, setOrders] = useState([])
+  const [profiles, setProfiles] = useState([])
   const [loading, setLoading] = useState(true)
+  const [ownerNotice, setOwnerNotice] = useState('')
   const todayStart = useMemo(() => {
     const date = new Date()
     date.setHours(0, 0, 0, 0)
@@ -508,8 +510,10 @@ function OwnerDashboard({ user, onOpenPos }) {
     const loadOwnerData = async () => {
       const productResult = await supabase.from('products').select('*').order('name')
       const orderResult = await supabase.from('orders').select('*').gte('created_at', todayStart).order('created_at', { ascending: false })
+      const profileResult = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
       setProducts((productResult.data || []).map(databaseProductToAppProduct))
       setOrders(orderResult.data || [])
+      setProfiles(profileResult.data || [])
       setLoading(false)
     }
     loadOwnerData()
@@ -518,6 +522,18 @@ function OwnerDashboard({ user, onOpenPos }) {
   const lowItems = products.filter((p) => p.stock >= 1 && p.stock <= 5)
   const outItems = products.filter((p) => p.stock <= 0)
   const todaySales = orders.reduce((sum, order) => sum + Number(order.total || 0), 0)
+  const pendingProfiles = profiles.filter((profile) => (profile.status || 'pending') === 'pending')
+  const activeProfiles = profiles.filter((profile) => (profile.status || 'pending') !== 'pending')
+
+  const updateProfileAccess = async (profile, updates) => {
+    if (!supabase) return
+    setOwnerNotice('')
+    const next = { ...updates, updated_at: new Date().toISOString() }
+    const { error } = await supabase.from('profiles').update(next).eq('id', profile.id)
+    if (error) return setOwnerNotice('ອັບເດດ user ບໍ່ສຳເລັດ: ' + error.message)
+    setProfiles((items) => items.map((item) => item.id === profile.id ? { ...item, ...next } : item))
+    setOwnerNotice('ອັບເດດ user ສຳເລັດ: ' + (profile.email || 'user'))
+  }
 
   return <main className="owner-page">
     <section className="owner-hero">
@@ -533,6 +549,15 @@ function OwnerDashboard({ user, onOpenPos }) {
       <section className="stock-alerts owner-alerts">
         <div className={outItems.length ? 'alert out' : 'alert out muted'}><span>0</span><div><strong>ສິນຄ້າໝົດແລ້ວ</strong><small>{outItems.length ? outItems.map((p) => p.name).join(', ') : 'ບໍ່ມີ'}</small></div></div>
         <div className={lowItems.length ? 'alert low' : 'alert low muted'}><span>!</span><div><strong>ສິນຄ້າໃກ້ຈະໝົດ</strong><small>{lowItems.length ? lowItems.map((p) => `${p.name} (${p.stock})`).join(', ') : 'ບໍ່ມີ'}</small></div></div>
+      </section>
+      <section className="page-card user-access-card">
+        <div className="section-top"><div><h2>ສິດເຂົ້າໃຊ້ງານ</h2><p>Owner ອະນຸມັດບັນຊີໃໝ່ ແລະ ກຳນົດ role: admin / worker.</p></div><strong className="pending-pill">{pendingProfiles.length} ລໍອະນຸມັດ</strong></div>
+        {ownerNotice && <div className="auth-message">{ownerNotice}</div>}
+        <div className="user-list">
+          {pendingProfiles.length === 0 && <p className="muted-text">ບໍ່ມີຄົນລໍອະນຸມັດ</p>}
+          {pendingProfiles.map((profile) => <div className="user-row pending" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>ສະຖານະ: ລໍອະນຸມັດ</small></div><div className="row-actions"><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>ອະນຸມັດ worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>ອະນຸມັດ admin</button><button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>ປະຕິເສດ</button></div></div>)}
+          {activeProfiles.map((profile) => <div className="user-row" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>Role: {profile.role} · Status: {profile.status || 'pending'}</small></div><div className="row-actions"><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>admin</button>{profile.email !== user?.email && <button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>block</button>}</div></div>)}
+        </div>
       </section>
       <section className="page-card">
         <h2>ບິນລ່າສຸດມື້ນີ້</h2>
@@ -556,17 +581,46 @@ function AuthScreen() {
     const result = mode === 'login'
       ? await supabase.auth.signInWithPassword({ email, password })
       : await supabase.auth.signUp({ email, password })
+    if (!result.error && mode === 'signup' && result.data?.user) {
+      await supabase.from('profiles').upsert({ id: result.data.user.id, email, role: 'worker', status: 'pending' }, { onConflict: 'id' })
+    }
     setBusy(false)
     if (result.error) setMessage(result.error.message)
-    else if (mode === 'signup') setMessage('ສ້າງບັນຊີແລ້ວ. ກວດເບິ່ງ email ເພື່ອຢືນຢັນຖ້າ Supabase ຮ້ອງຂໍ.')
+    else if (mode === 'signup') setMessage('ສົ່ງຄຳຂໍເຂົ້າໃຊ້ແລ້ວ. ກະລຸນາລໍຖ້າ owner ອະນຸມັດ.')
   }
 
   return <main className="auth-page"><section className="auth-card"><div className="auth-logo"><span className="brand-mark">K</span><div><strong>kennyXpay</strong><small>POS ອັດສະລິຍະ</small></div></div><h1>{mode === 'login' ? 'ເຂົ້າໃຊ້ງານ' : 'ສ້າງບັນຊີພະນັກງານ'}</h1><p>ໃຊ້ email ແລະ password ຈາກ Supabase Authentication</p><form onSubmit={submit}><label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></label><label>Password<input type="password" minLength="6" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>{message && <div className="auth-message">{message}</div>}<button className="primary wide" disabled={busy}>{busy ? 'ກຳລັງດຳເນີນການ...' : mode === 'login' ? 'ເຂົ້າລະບົບ' : 'ສ້າງບັນຊີ'}</button></form><button className="switch-auth" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setMessage('') }}>{mode === 'login' ? 'ຍັງບໍ່ມີບັນຊີ? ສ້າງບັນຊີ' : 'ມີບັນຊີແລ້ວ? ເຂົ້າລະບົບ'}</button></section></main>
 }
 
+function AccessStatusScreen({ profile }) {
+  const blocked = profile?.status === 'blocked'
+  return <main className="auth-page"><section className="auth-card"><div className="auth-logo"><span className="brand-mark">K</span><div><strong>kennyXpay</strong><small>ກວດສອບສິດເຂົ້າໃຊ້</small></div></div><h1>{blocked ? 'ບັນຊີຖືກປິດໃຊ້ງານ' : 'ລໍຖ້າ owner ອະນຸມັດ'}</h1><p>{blocked ? 'ກະລຸນາຕິດຕໍ່ owner ຂອງຮ້ານ.' : 'ບັນຊີນີ້ສະໝັກແລ້ວ ແຕ່ຍັງບໍ່ມີສິດເຂົ້າ POS. Owner ຕ້ອງອະນຸມັດແລະເລືອກ role ກ່ອນ.'}</p><button className="primary wide" onClick={() => supabase?.auth.signOut()}>ອອກຈາກລະບົບ</button></section></main>
+}
+
+const defaultPendingProfile = (user) => ({
+  id: user.id,
+  email: user.email,
+  role: 'worker',
+  status: 'pending',
+})
+
+async function loadProfileForUser(user) {
+  const fallback = defaultPendingProfile(user)
+  const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
+  if (!error && data) return data
+
+  const { data: created } = await supabase
+    .from('profiles')
+    .upsert(fallback, { onConflict: 'id' })
+    .select('*')
+    .single()
+
+  return created || fallback
+}
+
 function App() {
   const [session, setSession] = useState(null)
-  const [profile, setProfile] = useState({ role: 'owner' })
+  const [profile, setProfile] = useState({ role: 'worker', status: 'pending' })
   const [ownerPosMode, setOwnerPosMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const displayMode = new URLSearchParams(window.location.search).get('display') === '1'
@@ -577,8 +631,7 @@ function App() {
       const { data } = await supabase.auth.getSession()
       setSession(data.session)
       if (data.session?.user) {
-        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', data.session.user.id).maybeSingle()
-        setProfile(profileData || { role: 'owner' })
+        setProfile(await loadProfileForUser(data.session.user))
       }
       setLoading(false)
     }
@@ -587,8 +640,9 @@ function App() {
       setSession(nextSession)
       setOwnerPosMode(false)
       if (nextSession?.user) {
-        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', nextSession.user.id).maybeSingle()
-        setProfile(profileData || { role: 'owner' })
+        setProfile(await loadProfileForUser(nextSession.user))
+      } else {
+        setProfile({ role: 'worker', status: 'pending' })
       }
     })
     return () => subscription.unsubscribe()
@@ -597,6 +651,7 @@ function App() {
   if (displayMode) return <CustomerDisplay />
   if (loading) return <div className="loading">ກຳລັງເປີດລະບົບ...</div>
   if (!session) return <AuthScreen />
+  if (profile.status !== 'active') return <AccessStatusScreen profile={profile} />
   if (profile.role === 'owner' && !ownerPosMode) return <OwnerDashboard user={session.user} onOpenPos={() => setOwnerPosMode(true)} />
   return <PosApp user={session.user} role={profile.role} onOwnerHome={() => setOwnerPosMode(false)} />
 }
