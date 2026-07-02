@@ -522,7 +522,7 @@ function OwnerDashboard({ user, onOpenPos }) {
   const lowItems = products.filter((p) => p.stock >= 1 && p.stock <= 5)
   const outItems = products.filter((p) => p.stock <= 0)
   const todaySales = orders.reduce((sum, order) => sum + Number(order.total || 0), 0)
-  const pendingProfiles = profiles.filter((profile) => (profile.status || 'pending') === 'pending')
+  const pendingProfiles = profiles.filter((profile) => (profile.status || 'pending') === 'pending' && profile.email !== user?.email)
   const activeProfiles = profiles.filter((profile) => (profile.status || 'pending') !== 'pending')
 
   const updateProfileAccess = async (profile, updates) => {
