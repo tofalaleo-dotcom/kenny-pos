@@ -600,14 +600,15 @@ function AccessStatusScreen({ profile }) {
 const defaultPendingProfile = (user) => ({
   id: user.id,
   email: user.email,
-  role: 'worker',
-  status: 'pending',
+  role: user.email === 'tofalaleo@gmail.com' ? 'owner' : 'worker',
+  status: user.email === 'tofalaleo@gmail.com' ? 'active' : 'pending',
 })
 
 async function loadProfileForUser(user) {
   const fallback = defaultPendingProfile(user)
   const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
   if (!error && data) return data
+  if (fallback.role === 'owner') return fallback
 
   const { data: created } = await supabase
     .from('profiles')
