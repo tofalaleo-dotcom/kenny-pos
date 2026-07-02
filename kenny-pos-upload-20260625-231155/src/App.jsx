@@ -625,6 +625,8 @@ function App() {
   const [ownerPosMode, setOwnerPosMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const displayMode = new URLSearchParams(window.location.search).get('display') === '1'
+  const isOwnerEmail = session?.user?.email === 'tofalaleo@gmail.com'
+  const effectiveProfile = isOwnerEmail ? { ...profile, role: 'owner', status: 'active' } : profile
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
@@ -652,9 +654,9 @@ function App() {
   if (displayMode) return <CustomerDisplay />
   if (loading) return <div className="loading">ກຳລັງເປີດລະບົບ...</div>
   if (!session) return <AuthScreen />
-  if (profile.status !== 'active') return <AccessStatusScreen profile={profile} />
-  if (profile.role === 'owner' && !ownerPosMode) return <OwnerDashboard user={session.user} onOpenPos={() => setOwnerPosMode(true)} />
-  return <PosApp user={session.user} role={profile.role} onOwnerHome={() => setOwnerPosMode(false)} />
+  if (effectiveProfile.status !== 'active') return <AccessStatusScreen profile={effectiveProfile} />
+  if (effectiveProfile.role === 'owner' && !ownerPosMode) return <OwnerDashboard user={session.user} onOpenPos={() => setOwnerPosMode(true)} />
+  return <PosApp user={session.user} role={effectiveProfile.role} onOwnerHome={() => setOwnerPosMode(false)} />
 }
 
 export default App
