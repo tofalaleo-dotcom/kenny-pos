@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { databaseProductToAppProduct, isSupabaseConfigured, supabase } from './supabase'
 
+const OWNER_EMAILS = ['tofalaleo@gmail.com']
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase()
+const isOwnerUser = (user, profile) => OWNER_EMAILS.includes(normalizeEmail(user?.email || profile?.email)) || profile?.role === 'owner'
+
 const money = (value) => new Intl.NumberFormat('lo-LA').format(value) + ' ₭'
 const laoWeekdays = ['ວັນອາທິດ', 'ວັນຈັນ', 'ວັນອັງຄານ', 'ວັນພຸດ', 'ວັນພະຫັດ', 'ວັນສຸກ', 'ວັນເສົາ']
 const laoMonths = ['ມັງກອນ', 'ກຸມພາ', 'ມີນາ', 'ເມສາ', 'ພຶດສະພາ', 'ມິຖຸນາ', 'ກໍລະກົດ', 'ສິງຫາ', 'ກັນຍາ', 'ຕຸລາ', 'ພະຈິກ', 'ທັນວາ']
@@ -600,14 +604,17 @@ function AccessStatusScreen({ profile }) {
 const defaultPendingProfile = (user) => ({
   id: user.id,
   email: user.email,
-  role: user.email === 'tofalaleo@gmail.com' ? 'owner' : 'worker',
-  status: user.email === 'tofalaleo@gmail.com' ? 'active' : 'pending',
+  role: isOwnerUser(user) ? 'owner' : 'worker',
+  status: isOwnerUser(user) ? 'active' : 'pending',
 })
 
 async function loadProfileForUser(user) {
   const fallback = defaultPendingProfile(user)
   const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
-  if (!error && data) return data
+  if (!error && data) {
+    if (isOwnerUser(user, data)) return { ...data, role: 'owner', status: 'active' }
+    return data
+  }
   if (fallback.role === 'owner') return fallback
 
   const { data: created } = await supabase
@@ -625,8 +632,7 @@ function App() {
   const [ownerPosMode, setOwnerPosMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const displayMode = new URLSearchParams(window.location.search).get('display') === '1'
-  const isOwnerEmail = session?.user?.email === 'tofalaleo@gmail.com'
-  const effectiveProfile = isOwnerEmail ? { ...profile, role: 'owner', status: 'active' } : profile
+  const effectiveProfile = isOwnerUser(session?.user, profile) ? { ...profile, role: 'owner', status: 'active' } : profile
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
