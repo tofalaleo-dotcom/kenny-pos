@@ -7,11 +7,7 @@ if (import.meta.env.DEV) {
   document.documentElement.dataset.devBuild = String(Date.now())
 }
 
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'))
-}
-
-if (import.meta.env.DEV && 'serviceWorker' in navigator) {
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     const registrations = await navigator.serviceWorker.getRegistrations()
     await Promise.all(registrations.map((registration) => registration.unregister()))

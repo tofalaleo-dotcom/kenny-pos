@@ -2,6 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { databaseProductToAppProduct, isSupabaseConfigured, supabase } from './supabase'
 
+const OWNER_EMAILS = ['tofalaleo@gmail.com']
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase()
+const isOwnerUser = (user, profile) => OWNER_EMAILS.includes(normalizeEmail(user?.email || profile?.email)) || profile?.role === 'owner'
+const authErrorMessage = (message = '') => {
+  const text = String(message).toLowerCase()
+  if (text.includes('invalid login') || text.includes('invalid credentials')) return 'Email ຫຼື Password ບໍ່ຖືກ. ກະລຸນາກວດ password ໃໝ່.'
+  if (text.includes('email not confirmed')) return 'Email ນີ້ຍັງບໍ່ confirm. ກະລຸນາເປີດ email ແລ້ວກົດ confirm/reset password.'
+  if (text.includes('user already registered') || text.includes('already registered')) return 'Email ນີ້ມີບັນຊີແລ້ວ. ກະລຸນາກົດ “ມີບັນຊີແລ້ວ? ເຂົ້າລະບົບ”.'
+  return message || 'ເຂົ້າລະບົບບໍ່ໄດ້. ກະລຸນາລອງໃໝ່.'
+}
+
 const money = (value) => new Intl.NumberFormat('lo-LA').format(value) + ' ₭'
 const laoWeekdays = ['ວັນອາທິດ', 'ວັນຈັນ', 'ວັນອັງຄານ', 'ວັນພຸດ', 'ວັນພະຫັດ', 'ວັນສຸກ', 'ວັນເສົາ']
 const laoMonths = ['ມັງກອນ', 'ກຸມພາ', 'ມີນາ', 'ເມສາ', 'ພຶດສະພາ', 'ມິຖຸນາ', 'ກໍລະກົດ', 'ສິງຫາ', 'ກັນຍາ', 'ຕຸລາ', 'ພະຈິກ', 'ທັນວາ']
@@ -47,25 +58,33 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
     return `${laoWeekdays[now.getDay()]}, ${now.getDate()} ${laoMonths[now.getMonth()]} ${now.getFullYear()}`
   }, [])
 
+  const loadProducts = async () => {
+    if (!supabase) {
+      setProductsLoading(false)
+      return []
+    }
+    let { data, error } = await supabase.from('products').select('*').eq('is_active', true).order('name')
+    if (error) {
+      const fallback = await supabase.from('products').select('*').order('name')
+      data = fallback.data
+      error = fallback.error
+    }
+    if (error) {
+      setProducts([])
+      setProductsLoading(false)
+      setNotice('ໂຫຼດສິນຄ້າຈາກ Supabase ບໍ່ໄດ້: ' + error.message)
+      return []
+    }
+    const nextProducts = (data || []).map(databaseProductToAppProduct)
+    setProducts(nextProducts)
+    setProductsLoading(false)
+    return nextProducts
+  }
+
   useEffect(() => {
     if (!supabase) {
       setProductsLoading(false)
       return
-    }
-    const loadProducts = async () => {
-      let { data, error } = await supabase.from('products').select('*').eq('is_active', true).order('name')
-      if (error) {
-        const fallback = await supabase.from('products').select('*').order('name')
-        data = fallback.data
-        error = fallback.error
-      }
-      if (error) {
-        setProducts([])
-        setNotice('ໂຫຼດສິນຄ້າຈາກ Supabase ບໍ່ໄດ້: ' + error.message)
-      } else {
-        setProducts((data || []).map(databaseProductToAppProduct))
-      }
-      setProductsLoading(false)
     }
     loadProducts()
     const channel = supabase.channel('products-live')
@@ -331,8 +350,11 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
     const { data, error } = await supabase.from('products').insert(payload).select('*').single()
     if (error) return setNotice('ບັນທຶກສິນຄ້າບໍ່ສຳເລັດ: ' + error.message)
     const product = databaseProductToAppProduct(data)
-    if (stock > 0) await supabase.from('inventory_transactions').insert({ product_id: data.id, created_by: user.id, transaction_type: 'stock_in', quantity_change: stock, unit_cost: cost, reason: 'ເພີ່ມສິນຄ້າໃໝ່' })
-    setProducts((items) => [...items, product].sort((a, b) => a.name.localeCompare(b.name, 'lo')))
+    if (stock > 0) {
+      const { error: txError } = await supabase.from('inventory_transactions').insert({ product_id: data.id, created_by: user.id, transaction_type: 'stock_in', quantity_change: stock, unit_cost: cost, reason: 'ເພີ່ມສິນຄ້າໃໝ່' })
+      if (txError) setNotice('ສິນຄ້າຖືກບັນທຶກແລ້ວ ແຕ່ບັນທຶກປະຫວັດສະຕັອກບໍ່ໄດ້: ' + txError.message)
+    }
+    await loadProducts()
     setShowAddProduct(false)
     setShowNew(false)
     setNewBarcode('')
@@ -381,9 +403,10 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
     if (supabase && typeof product.id === 'string') {
       const { error } = await supabase.from('products').update({ stock_quantity: newStock, average_cost: newAverageCost }).eq('id', product.id)
       if (error) return setNotice('ເພີ່ມສະຕັອກບໍ່ສຳເລັດ: ' + error.message)
-      await supabase.from('inventory_transactions').insert({ product_id: product.id, created_by: user.id, transaction_type: 'stock_in', quantity_change: quantity, unit_cost: purchaseCost, reason: 'ຮັບສິນຄ້າເຂົ້າ' })
+      const { error: txError } = await supabase.from('inventory_transactions').insert({ product_id: product.id, created_by: user.id, transaction_type: 'stock_in', quantity_change: quantity, unit_cost: purchaseCost, reason: 'ຮັບສິນຄ້າເຂົ້າ' })
+      if (txError) return setNotice('ສະຕັອກຖືກອັບເດດແລ້ວ ແຕ່ບັນທຶກປະຫວັດບໍ່ໄດ້: ' + txError.message)
     }
-    setProducts((items) => items.map((item) => item.id === product.id ? { ...item, stock: newStock, cost: newAverageCost } : item))
+    await loadProducts()
     setShowStockIn(false); setNotice(`ເພີ່ມ ${product.name} ${quantity} ${product.unit} ແລ້ວ`)
   }
 
@@ -407,7 +430,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
       const { error } = await supabase.from('products').update(updates).eq('id', product.id)
       if (error) return setNotice('ແກ້ໄຂສິນຄ້າບໍ່ສຳເລັດ: ' + error.message)
     }
-    setProducts((items) => items.map((item) => item.id === product.id ? { ...item, barcode, name, unit, price, cost, stock } : item))
+    await loadProducts()
     setEditingProduct(null)
     setNotice('ແກ້ໄຂສິນຄ້າແລ້ວ: ' + name)
   }
@@ -425,9 +448,10 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
     if (supabase && typeof product.id === 'string') {
       const { error } = await supabase.from('products').update({ stock_quantity: newStock }).eq('id', product.id)
       if (error) return setNotice('ລົບສະຕັອກບໍ່ສຳເລັດ: ' + error.message)
-      await supabase.from('inventory_transactions').insert({ product_id: product.id, created_by: user.id, transaction_type: 'adjustment', quantity_change: -Math.min(quantity, product.stock), unit_cost: product.cost, reason })
+      const { error: txError } = await supabase.from('inventory_transactions').insert({ product_id: product.id, created_by: user.id, transaction_type: 'adjustment', quantity_change: -Math.min(quantity, product.stock), unit_cost: product.cost, reason })
+      if (txError) return setNotice('ສະຕັອກຖືກອັບເດດແລ້ວ ແຕ່ບັນທຶກປະຫວັດບໍ່ໄດ້: ' + txError.message)
     }
-    setProducts((items) => items.map((item) => item.id === product.id ? { ...item, stock: newStock } : item))
+    await loadProducts()
     setAdjustingProduct(null)
     setNotice(`ລົບສະຕັອກ ${product.name} ແລ້ວ`)
   }
@@ -522,7 +546,7 @@ function OwnerDashboard({ user, onOpenPos }) {
   const lowItems = products.filter((p) => p.stock >= 1 && p.stock <= 5)
   const outItems = products.filter((p) => p.stock <= 0)
   const todaySales = orders.reduce((sum, order) => sum + Number(order.total || 0), 0)
-  const pendingProfiles = profiles.filter((profile) => (profile.status || 'pending') === 'pending')
+  const pendingProfiles = profiles.filter((profile) => (profile.status || 'pending') === 'pending' && profile.email !== user?.email)
   const activeProfiles = profiles.filter((profile) => (profile.status || 'pending') !== 'pending')
 
   const updateProfileAccess = async (profile, updates) => {
@@ -578,14 +602,15 @@ function AuthScreen() {
     event.preventDefault()
     if (!supabase) return setMessage('ບໍ່ພົບການຕັ້ງຄ່າ Supabase')
     setBusy(true); setMessage('')
+    const cleanEmail = normalizeEmail(email)
     const result = mode === 'login'
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password })
+      ? await supabase.auth.signInWithPassword({ email: cleanEmail, password })
+      : await supabase.auth.signUp({ email: cleanEmail, password })
     if (!result.error && mode === 'signup' && result.data?.user) {
-      await supabase.from('profiles').upsert({ id: result.data.user.id, email, role: 'worker', status: 'pending' }, { onConflict: 'id' })
+      await supabase.from('profiles').upsert({ id: result.data.user.id, email: cleanEmail, role: 'worker', status: 'pending' }, { onConflict: 'id' })
     }
     setBusy(false)
-    if (result.error) setMessage(result.error.message)
+    if (result.error) setMessage(authErrorMessage(result.error.message))
     else if (mode === 'signup') setMessage('ສົ່ງຄຳຂໍເຂົ້າໃຊ້ແລ້ວ. ກະລຸນາລໍຖ້າ owner ອະນຸມັດ.')
   }
 
@@ -600,14 +625,18 @@ function AccessStatusScreen({ profile }) {
 const defaultPendingProfile = (user) => ({
   id: user.id,
   email: user.email,
-  role: 'worker',
-  status: 'pending',
+  role: isOwnerUser(user) ? 'owner' : 'worker',
+  status: isOwnerUser(user) ? 'active' : 'pending',
 })
 
 async function loadProfileForUser(user) {
   const fallback = defaultPendingProfile(user)
   const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
-  if (!error && data) return data
+  if (!error && data) {
+    if (isOwnerUser(user, data)) return { ...data, role: 'owner', status: 'active' }
+    return data
+  }
+  if (fallback.role === 'owner') return fallback
 
   const { data: created } = await supabase
     .from('profiles')
@@ -624,6 +653,7 @@ function App() {
   const [ownerPosMode, setOwnerPosMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const displayMode = new URLSearchParams(window.location.search).get('display') === '1'
+  const effectiveProfile = isOwnerUser(session?.user, profile) ? { ...profile, role: 'owner', status: 'active' } : profile
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
@@ -651,9 +681,9 @@ function App() {
   if (displayMode) return <CustomerDisplay />
   if (loading) return <div className="loading">ກຳລັງເປີດລະບົບ...</div>
   if (!session) return <AuthScreen />
-  if (profile.status !== 'active') return <AccessStatusScreen profile={profile} />
-  if (profile.role === 'owner' && !ownerPosMode) return <OwnerDashboard user={session.user} onOpenPos={() => setOwnerPosMode(true)} />
-  return <PosApp user={session.user} role={profile.role} onOwnerHome={() => setOwnerPosMode(false)} />
+  if (effectiveProfile.status !== 'active') return <AccessStatusScreen profile={effectiveProfile} />
+  if (effectiveProfile.role === 'owner' && !ownerPosMode) return <OwnerDashboard user={session.user} onOpenPos={() => setOwnerPosMode(true)} />
+  return <PosApp user={session.user} role={effectiveProfile.role} onOwnerHome={() => setOwnerPosMode(false)} />
 }
 
 export default App
