@@ -430,9 +430,8 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
     if (!cart.length) return
     if (paymentMethod === 'cash') {
       const paidAmount = Number(cash || 0)
-      const finalPaidAmount = paidAmount > 0 ? paidAmount : total
-      if (paidAmount <= 0) setCash(String(total))
-      return checkout(finalPaidAmount)
+      if (paidAmount <= 0) return setNotice('ກະລຸນາໃສ່ເງິນສົດທີ່ຮັບກ່ອນ')
+      return checkout(paidAmount)
     }
     setCash(String(total))
     return checkout(total)
