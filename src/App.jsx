@@ -98,6 +98,11 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   useEffect(() => {
     const payload = { cart, total, cash: Number(cash || 0), change, paymentOpen: showPayment, paymentMethod }
     localStorage.setItem('kennyxpay-current-sale', JSON.stringify(payload))
+    if ('BroadcastChannel' in window) {
+      const broadcast = new BroadcastChannel('kennyxpay-customer-display')
+      broadcast.postMessage(payload)
+      broadcast.close()
+    }
     if (!supabase) return
     const channel = supabase.channel('customer-display')
     channel.subscribe((status) => {
@@ -542,12 +547,14 @@ function CustomerDisplay() {
     }
     window.addEventListener('storage', onStorage)
     const timer = window.setInterval(readSale, 700)
+    const broadcast = 'BroadcastChannel' in window ? new BroadcastChannel('kennyxpay-customer-display') : null
+    if (broadcast) broadcast.onmessage = (event) => setSale(event.data)
     readSale()
-    if (!supabase) return () => { window.removeEventListener('storage', onStorage); window.clearInterval(timer) }
+    if (!supabase) return () => { window.removeEventListener('storage', onStorage); window.clearInterval(timer); broadcast?.close() }
     const channel = supabase.channel('customer-display')
       .on('broadcast', { event: 'cart' }, ({ payload }) => setSale(payload))
       .subscribe()
-    return () => { window.removeEventListener('storage', onStorage); window.clearInterval(timer); supabase.removeChannel(channel) }
+    return () => { window.removeEventListener('storage', onStorage); window.clearInterval(timer); broadcast?.close(); supabase.removeChannel(channel) }
   }, [])
 
   return <main className="customer-display">

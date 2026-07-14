@@ -7,11 +7,24 @@ if (import.meta.env.DEV) {
   document.documentElement.dataset.devBuild = String(Date.now())
 }
 
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+/*
+  GitHub Pages was sometimes serving an old POS screen from the previous PWA cache.
+  For the shop POS we prefer always-fresh screens over offline caching, so remove
+  old service workers and caches whenever the app opens.
+*/
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {
-      // ຖ້າ browser ບໍ່ຮອງຮັບ ຫຼື hosting ບລັອກ, app ຍັງໃຊ້ງານໄດ້ປົກກະຕິ.
-    })
+    navigator.serviceWorker.getRegistrations()
+      .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+      .catch(() => {})
+  })
+}
+
+if ('caches' in window) {
+  window.addEventListener('load', () => {
+    caches.keys()
+      .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+      .catch(() => {})
   })
 }
 
