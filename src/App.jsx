@@ -96,7 +96,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   }, [])
 
   useEffect(() => {
-    const payload = { cart, total, cash: Number(cash || 0), change }
+    const payload = { cart, total, cash: Number(cash || 0), change, paymentOpen: showPayment, paymentMethod }
     localStorage.setItem('kennyxpay-current-sale', JSON.stringify(payload))
     if (!supabase) return
     const channel = supabase.channel('customer-display')
@@ -104,7 +104,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
       if (status === 'SUBSCRIBED') channel.send({ type: 'broadcast', event: 'cart', payload })
     })
     return () => supabase.removeChannel(channel)
-  }, [cart, total, cash, change])
+  }, [cart, total, cash, change, showPayment, paymentMethod])
 
   useEffect(() => {
     if (!cart.length) setShowReceiptPopup(false)
@@ -134,6 +134,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   const openPaymentPopup = () => {
     if (!cart.length) return
     setPaymentMethod('cash')
+    setShowReceiptPopup(false)
     setShowPayment(true)
   }
 
@@ -504,10 +505,10 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
           <div className="sale-shortcuts"><span><b>Enter</b> ຊຳລະເງິນ</span><span><b>Backspace</b> ຍ້ອນກັບລາຍການຫຼ້າສຸດ</span></div>
           <div className="product-grid">{productsLoading ? <div className="empty products-empty"><span>⌛</span><p>ກຳລັງໂຫຼດສິນຄ້າຈາກ Supabase...</p></div> : filtered.length === 0 ? <div className="empty products-empty"><span>+</span><p>ຍັງບໍ່ມີສິນຄ້າໃນ Supabase</p><small>ກົດ “+ ເພີ່ມສິນຄ້າໃໝ່” ເພື່ອເພີ່ມຂໍ້ມູນຈິງ</small></div> : filtered.map((p) => <button className="product" key={p.id} onClick={() => addProduct(p)}><span className="product-icon" style={{background:p.color}}>▣</span><strong>{p.name}</strong><small>{p.stock} {p.unit} ເຫຼືອ</small><b>{money(p.price)}</b></button>)}</div>
         </div>
-        <aside className={showReceiptPopup ? 'cart receipt-popup' : 'cart'}><div className="cart-title"><div><span className="cart-dot">●</span><strong>ລາຍການຂາຍ</strong></div><div className="cart-title-actions"><small>{cart.length} ລາຍການ</small>{showReceiptPopup && <button className="cart-close" type="button" onClick={() => setShowReceiptPopup(false)}>×</button>}</div></div>
+        {!showPayment && <aside className={showReceiptPopup ? 'cart receipt-popup' : 'cart'}><div className="cart-title"><div><span className="cart-dot">●</span><strong>ລາຍການຂາຍ</strong></div><div className="cart-title-actions"><small>{cart.length} ລາຍການ</small>{showReceiptPopup && <button className="cart-close" type="button" onClick={() => setShowReceiptPopup(false)}>×</button>}</div></div>
           <div className="cart-items">{cart.length === 0 ? <div className="empty"><span>⌑</span><p>ຍັງບໍ່ມີລາຍການ</p><small>ສະແກນ ຫຼື ເລືອກສິນຄ້າເພື່ອເລີ່ມຂາຍ</small></div> : cart.map((item) => <div className="line" key={item.id}><div className="line-top"><strong>{item.name}</strong><button onClick={() => changeQty(item.id, -item.qty)}>×</button></div><small>{money(item.price)} / {item.unit}</small><div className="line-bottom"><div className="qty"><button onClick={() => changeQty(item.id,-1)}>−</button><b>{item.qty}</b><button onClick={() => changeQty(item.id,1)}>+</button></div><strong>{money(item.price * item.qty)}</strong></div></div>)}</div>
           <div className="cart-footer"><div className="sum"><span>ລວມທັງໝົດ</span><strong>{money(total)}</strong></div><div className="cart-actions"><button className="hold" onClick={holdOrder}>♧ ພັກບິນ</button><button className="pay" onClick={openPaymentPopup}>ຊຳລະເງິນ <span>→</span></button></div></div>
-        </aside>
+        </aside>}
       </section>}
       {canManage && active === 'products' && <section className="page-card"><div className="section-top"><div><h2>ສິນຄ້າໃນສາງ</h2><p>ຈັດການສະຕັອກ ແລະ ຕົ້ນທຶນສະເລ່ຍ</p></div><div className="head-actions"><button className="stock-shortcut" onClick={() => openManualProduct()}>+ ເພີ່ມສິນຄ້າໃໝ່</button><button className="primary" onClick={() => setShowStockIn(true)}>+ ຮັບສິນຄ້າເຂົ້າ</button></div></div><table><thead><tr><th>ສິນຄ້າ</th><th>Barcode</th><th>ສະຕັອກ</th><th>ຕົ້ນທຶນສະເລ່ຍ</th><th>ລາຄາຂາຍ</th><th>ສະຖານະ</th><th>ຈັດການ</th></tr></thead><tbody>{products.map(p => <tr key={p.id}><td><strong>{p.name}</strong></td><td>{p.barcode}</td><td>{p.stock} {p.unit}</td><td>{money(p.cost)}</td><td>{money(p.price)}</td><td><span className={p.stock <= 0 ? 'status out' : p.stock <= 5 ? 'status low' : 'status'}>{p.stock <= 0 ? 'ໝົດ' : p.stock <= 5 ? 'ໃກ້ຈະໝົດ' : 'ປົກກະຕິ'}</span></td><td><div className="row-actions"><button onClick={() => setEditingProduct(p)}>ແກ້ໄຂ</button><button onClick={() => setAdjustingProduct(p)}>ລົບສະຕັອກ</button><button className="danger-link" onClick={() => deleteProduct(p)}>ຢຸດຂາຍ</button></div></td></tr>)}</tbody></table></section>}
       {active === 'reports' && <section className="report-grid"><div className="metric"><small>ຍອດຂາຍມື້ນີ້</small><strong>1,245,000 ₭</strong><span>↑ 12.5% ຈາກມື້ວານ</span></div><div className="metric"><small>ກຳໄລຂັ້ນຕົ້ນ</small><strong>382,500 ₭</strong><span>30.7% ຂອງຍອດຂາຍ</span></div><div className="metric"><small>ຈຳນວນບິນ</small><strong>58 ບິນ</strong><span>ສະເລ່ຍ 21,466 ₭ / ບິນ</span></div><div className="page-card report"><h2>ສະຫຼຸບກຳໄລ</h2><p>ລາຍງານນີ້ຄິດໄລ່ຈາກຕົ້ນທຶນສະເລ່ຍຂອງສິນຄ້າ.</p><div className="bar-chart">{[48,68,42,80,58,92,73].map((n,i)=><i key={i} style={{height:n+'%'}}/> )}</div></div></section>}
@@ -529,21 +530,30 @@ function CustomerDisplay() {
   })
 
   useEffect(() => {
+    const readSale = () => {
+      try {
+        const saved = JSON.parse(localStorage.getItem('kennyxpay-current-sale') || 'null')
+        if (saved) setSale(saved)
+      } catch {}
+    }
     const onStorage = (event) => {
       if (event.key !== 'kennyxpay-current-sale' || !event.newValue) return
       try { setSale(JSON.parse(event.newValue)) } catch {}
     }
     window.addEventListener('storage', onStorage)
-    if (!supabase) return () => window.removeEventListener('storage', onStorage)
+    const timer = window.setInterval(readSale, 700)
+    readSale()
+    if (!supabase) return () => { window.removeEventListener('storage', onStorage); window.clearInterval(timer) }
     const channel = supabase.channel('customer-display')
       .on('broadcast', { event: 'cart' }, ({ payload }) => setSale(payload))
       .subscribe()
-    return () => { window.removeEventListener('storage', onStorage); supabase.removeChannel(channel) }
+    return () => { window.removeEventListener('storage', onStorage); window.clearInterval(timer); supabase.removeChannel(channel) }
   }, [])
 
   return <main className="customer-display">
     <div className="display-brand"><span className="brand-mark">K</span><strong>kennyXpay</strong><small>ຂໍຂອບໃຈທີ່ອຸດໜູນ</small></div>
     <section className="display-card"><div className="display-heading"><span>ລາຍການສິນຄ້າ</span><span>ລວມ</span></div>{sale.cart.length ? sale.cart.map((item) => <div className="display-line" key={item.id}><span>{item.name} <b>× {item.qty}</b></span><strong>{money(item.price * item.qty)}</strong></div>) : <div className="display-empty">ກຳລັງລໍຖ້າລາຍການສິນຄ້າ...</div>}<div className="display-total"><span>ຍອດລວມສຸດທິ</span><strong>{money(sale.total)}</strong></div>{sale.cash > 0 && <div className="display-change"><span>ເງິນທອນ</span><strong>{money(sale.change)}</strong></div>}</section>
+    <section className="display-pay-qr"><img src={`${import.meta.env.BASE_URL}payment-qr.png`} alt="QR Code ສຳລັບໂອນເງິນ" /><h2>ສະແກນ QR ເພື່ອໂອນເງິນ</h2><p>{sale.total > 0 ? 'ກະລຸນາໂອນຕາມຍອດລວມດ້ານລຸ່ມ' : 'QR ສຳລັບຊຳລະເງິນຂອງຮ້ານ'}</p>{sale.total > 0 && <strong>{money(sale.total)}</strong>}</section>
   </main>
 }
 
