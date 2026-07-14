@@ -16,6 +16,7 @@ const authErrorMessage = (message = '') => {
 const money = (value) => new Intl.NumberFormat('lo-LA').format(value) + ' ₭'
 const laoWeekdays = ['ວັນອາທິດ', 'ວັນຈັນ', 'ວັນອັງຄານ', 'ວັນພຸດ', 'ວັນພະຫັດ', 'ວັນສຸກ', 'ວັນເສົາ']
 const laoMonths = ['ມັງກອນ', 'ກຸມພາ', 'ມີນາ', 'ເມສາ', 'ພຶດສະພາ', 'ມິຖຸນາ', 'ກໍລະກົດ', 'ສິງຫາ', 'ກັນຍາ', 'ຕຸລາ', 'ພະຈິກ', 'ທັນວາ']
+const APP_BUILD = 'fix-qr-cart-20260715'
 
 function PosApp({ user, role = 'worker', onOwnerHome }) {
   const [products, setProducts] = useState([])
@@ -114,6 +115,10 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   useEffect(() => {
     if (!cart.length) setShowReceiptPopup(false)
   }, [cart.length])
+
+  useEffect(() => {
+    if (showPayment) setShowReceiptPopup(false)
+  }, [showPayment])
 
   useEffect(() => () => { stopBarcodeCamera(); stopPosCameraScanner() }, [])
 
@@ -496,7 +501,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
       <div className="sidebar-foot"><span className="dot"/> ລະບົບພ້ອມໃຊ້ງານ</div>
     </aside>
     <main>
-      <header><div><p className="eyebrow">{todayLabel} {isSupabaseConfigured ? '· Supabase ພ້ອມ' : '· ໂໝດທົດລອງ'}</p><h1>{active === 'sale' ? 'ໜ້າຂາຍສິນຄ້າ' : active === 'products' ? 'ສິນຄ້າ & ສະຕັອກ' : active === 'reports' ? 'ພາບລວມກຳໄລ' : 'ປິດຍອດເງິນສົດ'}</h1></div><div className="user"><span>ພ</span><div><strong>{user?.email || 'ພະນັກງານ'}</strong><button className="signout" onClick={() => supabase?.auth.signOut()}>ອອກຈາກລະບົບ</button></div></div></header>
+      <header><div><p className="eyebrow">{todayLabel} {isSupabaseConfigured ? '· Supabase ພ້ອມ' : '· ໂໝດທົດລອງ'} · {APP_BUILD}</p><h1>{active === 'sale' ? 'ໜ້າຂາຍສິນຄ້າ' : active === 'products' ? 'ສິນຄ້າ & ສະຕັອກ' : active === 'reports' ? 'ພາບລວມກຳໄລ' : 'ປິດຍອດເງິນສົດ'}</h1></div><div className="user"><span>ພ</span><div><strong>{user?.email || 'ພະນັກງານ'}</strong><button className="signout" onClick={() => supabase?.auth.signOut()}>ອອກຈາກລະບົບ</button></div></div></header>
       {notice && <div className="toast">✓ {notice}<button onClick={() => setNotice('')}>×</button></div>}
       {active === 'sale' && <section className="sale-page">
         <div className="catalog">
@@ -558,7 +563,7 @@ function CustomerDisplay() {
   }, [])
 
   return <main className="customer-display">
-    <div className="display-brand"><span className="brand-mark">K</span><strong>kennyXpay</strong><small>ຂໍຂອບໃຈທີ່ອຸດໜູນ</small></div>
+    <div className="display-brand"><span className="brand-mark">K</span><strong>kennyXpay</strong><small>ຂໍຂອບໃຈທີ່ອຸດໜູນ · {APP_BUILD}</small></div>
     <section className="display-card"><div className="display-heading"><span>ລາຍການສິນຄ້າ</span><span>ລວມ</span></div>{sale.cart.length ? sale.cart.map((item) => <div className="display-line" key={item.id}><span>{item.name} <b>× {item.qty}</b></span><strong>{money(item.price * item.qty)}</strong></div>) : <div className="display-empty">ກຳລັງລໍຖ້າລາຍການສິນຄ້າ...</div>}<div className="display-total"><span>ຍອດລວມສຸດທິ</span><strong>{money(sale.total)}</strong></div>{sale.cash > 0 && <div className="display-change"><span>ເງິນທອນ</span><strong>{money(sale.change)}</strong></div>}</section>
     {sale.paymentOpen && sale.paymentMethod === 'transfer' && <div className="customer-qr-popup"><section className="display-pay-qr popup"><img src={`${import.meta.env.BASE_URL}payment-qr.png`} alt="QR Code ສຳລັບໂອນເງິນ" /><h2>ສະແກນ QR ເພື່ອໂອນເງິນ</h2><p>ກະລຸນາໂອນຕາມຍອດນີ້</p><strong>{money(sale.total)}</strong></section></div>}
   </main>
