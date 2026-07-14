@@ -121,7 +121,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
       const tag = event.target?.tagName
       const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
       if (event.key === '*') { event.preventDefault(); setPaymentMethod('cash'); setTimeout(() => cashInputRef.current?.focus(), 50) }
-      if (event.key === '-') { event.preventDefault(); setPaymentMethod('transfer') }
+      if (event.key === '-') { event.preventDefault(); setPaymentMethod('transfer'); setCash(String(total)) }
       if (event.key === '+') { event.preventDefault(); setPrintReceipt((value) => !value) }
       if (event.key === 'Enter') { event.preventDefault(); checkout() }
       if (event.key === 'Escape') { event.preventDefault(); setShowPayment(false) }
@@ -481,7 +481,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
 
   const filtered = products.filter((p) => p.name.includes(search) || p.barcode.includes(search))
 
-  return <div className="app-shell">
+  return <div className={showPayment ? 'app-shell payment-open' : 'app-shell'}>
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">K</span><div><strong>kennyXpay</strong><small>POS ອັດສະລິຍະ</small></div></div>
       <nav>
@@ -552,8 +552,8 @@ function CustomerDisplay() {
 
   return <main className="customer-display">
     <div className="display-brand"><span className="brand-mark">K</span><strong>kennyXpay</strong><small>ຂໍຂອບໃຈທີ່ອຸດໜູນ</small></div>
-    <section className="display-pay-qr"><img src={`${import.meta.env.BASE_URL}payment-qr.png`} alt="QR Code ສຳລັບໂອນເງິນ" /><h2>ສະແກນ QR ເພື່ອໂອນເງິນ</h2><p>{sale.total > 0 ? 'ກະລຸນາໂອນຕາມຍອດລວມດ້ານລຸ່ມ' : 'QR ສຳລັບຊຳລະເງິນຂອງຮ້ານ'}</p>{sale.total > 0 && <strong>{money(sale.total)}</strong>}</section>
     <section className="display-card"><div className="display-heading"><span>ລາຍການສິນຄ້າ</span><span>ລວມ</span></div>{sale.cart.length ? sale.cart.map((item) => <div className="display-line" key={item.id}><span>{item.name} <b>× {item.qty}</b></span><strong>{money(item.price * item.qty)}</strong></div>) : <div className="display-empty">ກຳລັງລໍຖ້າລາຍການສິນຄ້າ...</div>}<div className="display-total"><span>ຍອດລວມສຸດທິ</span><strong>{money(sale.total)}</strong></div>{sale.cash > 0 && <div className="display-change"><span>ເງິນທອນ</span><strong>{money(sale.change)}</strong></div>}</section>
+    {sale.paymentOpen && sale.paymentMethod === 'transfer' && <div className="customer-qr-popup"><section className="display-pay-qr popup"><img src={`${import.meta.env.BASE_URL}payment-qr.png`} alt="QR Code ສຳລັບໂອນເງິນ" /><h2>ສະແກນ QR ເພື່ອໂອນເງິນ</h2><p>ກະລຸນາໂອນຕາມຍອດນີ້</p><strong>{money(sale.total)}</strong></section></div>}
   </main>
 }
 

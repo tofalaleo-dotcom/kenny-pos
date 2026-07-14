@@ -22,7 +22,8 @@ $$;
 
 revoke all on function private.current_user_role() from public;
 revoke all on function private.current_user_role() from anon;
-revoke all on function private.current_user_role() from authenticated;
+grant usage on schema private to authenticated;
+grant execute on function private.current_user_role() to authenticated;
 
 alter table public.products enable row level security;
 alter table public.inventory_transactions enable row level security;
@@ -93,4 +94,3 @@ set email = excluded.email,
     role = 'owner',
     status = 'active',
     updated_at = now();
-
