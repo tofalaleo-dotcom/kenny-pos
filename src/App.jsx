@@ -552,8 +552,8 @@ function CustomerDisplay() {
 
   return <main className="customer-display">
     <div className="display-brand"><span className="brand-mark">K</span><strong>kennyXpay</strong><small>ຂໍຂອບໃຈທີ່ອຸດໜູນ</small></div>
-    <section className="display-card"><div className="display-heading"><span>ລາຍການສິນຄ້າ</span><span>ລວມ</span></div>{sale.cart.length ? sale.cart.map((item) => <div className="display-line" key={item.id}><span>{item.name} <b>× {item.qty}</b></span><strong>{money(item.price * item.qty)}</strong></div>) : <div className="display-empty">ກຳລັງລໍຖ້າລາຍການສິນຄ້າ...</div>}<div className="display-total"><span>ຍອດລວມສຸດທິ</span><strong>{money(sale.total)}</strong></div>{sale.cash > 0 && <div className="display-change"><span>ເງິນທອນ</span><strong>{money(sale.change)}</strong></div>}</section>
     <section className="display-pay-qr"><img src={`${import.meta.env.BASE_URL}payment-qr.png`} alt="QR Code ສຳລັບໂອນເງິນ" /><h2>ສະແກນ QR ເພື່ອໂອນເງິນ</h2><p>{sale.total > 0 ? 'ກະລຸນາໂອນຕາມຍອດລວມດ້ານລຸ່ມ' : 'QR ສຳລັບຊຳລະເງິນຂອງຮ້ານ'}</p>{sale.total > 0 && <strong>{money(sale.total)}</strong>}</section>
+    <section className="display-card"><div className="display-heading"><span>ລາຍການສິນຄ້າ</span><span>ລວມ</span></div>{sale.cart.length ? sale.cart.map((item) => <div className="display-line" key={item.id}><span>{item.name} <b>× {item.qty}</b></span><strong>{money(item.price * item.qty)}</strong></div>) : <div className="display-empty">ກຳລັງລໍຖ້າລາຍການສິນຄ້າ...</div>}<div className="display-total"><span>ຍອດລວມສຸດທິ</span><strong>{money(sale.total)}</strong></div>{sale.cash > 0 && <div className="display-change"><span>ເງິນທອນ</span><strong>{money(sale.change)}</strong></div>}</section>
   </main>
 }
 
