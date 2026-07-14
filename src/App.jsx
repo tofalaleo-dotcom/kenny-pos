@@ -21,6 +21,9 @@ const APP_BUILD = 'fix-qr-cart-20260715'
 function PosApp({ user, role = 'worker', onOwnerHome }) {
   const [products, setProducts] = useState([])
   const [productsLoading, setProductsLoading] = useState(true)
+  const [reportOrders, setReportOrders] = useState([])
+  const [monthlyReports, setMonthlyReports] = useState([])
+  const [reportsLoading, setReportsLoading] = useState(false)
   const [cart, setCart] = useState([])
   const [lastAddedId, setLastAddedId] = useState(null)
   const [search, setSearch] = useState('')
@@ -52,6 +55,11 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.qty, 0), [cart])
   const profit = useMemo(() => cart.reduce((sum, item) => sum + (item.price - item.cost) * item.qty, 0), [cart])
   const change = Math.max(0, Number(cash || 0) - total)
+  const currentMonthReport = useMemo(() => {
+    const sales = reportOrders.reduce((sum, order) => sum + Number(order.total || 0), 0)
+    const cost = reportOrders.reduce((sum, order) => sum + (order.order_items || []).reduce((itemSum, item) => itemSum + Number(item.quantity || 0) * Number(item.cost_at_sale || 0), 0), 0)
+    return { sales, cost, profit: sales - cost, orders: reportOrders.length }
+  }, [reportOrders])
   const lowItems = products.filter((p) => p.stock >= 1 && p.stock <= 5)
   const outItems = products.filter((p) => p.stock <= 0)
   const alertCount = lowItems.length + outItems.length
@@ -84,6 +92,47 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
     return nextProducts
   }
 
+  const loadReports = async () => {
+    if (!supabase) return
+    setReportsLoading(true)
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString()
+    const { data: ordersData, error: ordersError } = await supabase
+      .from('orders')
+      .select('*, order_items(*)')
+      .eq('status', 'completed')
+      .gte('created_at', start)
+      .lt('created_at', end)
+      .order('created_at', { ascending: false })
+    if (ordersError) setNotice('ໂຫຼດລາຍງານເດືອນນີ້ບໍ່ໄດ້: ' + ordersError.message)
+    setReportOrders(ordersData || [])
+
+    const { data: archiveData, error: archiveError } = await supabase
+      .from('monthly_reports')
+      .select('*')
+      .order('year', { ascending: false })
+      .order('month', { ascending: false })
+      .limit(24)
+    if (!archiveError) setMonthlyReports(archiveData || [])
+    setReportsLoading(false)
+  }
+
+  const closePreviousMonth = async () => {
+    if (!supabase) return setNotice('Supabase ຍັງບໍ່ພ້ອມ')
+    const now = new Date()
+    const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const year = previousMonth.getFullYear()
+    const month = previousMonth.getMonth() + 1
+    if (!window.confirm(`ປິດເດືອນ ${month}/${year} ບໍ? ລະບົບຈະເກັບ archive ກຳໄລແລ້ວລຶບບິນເດືອນເກົ່າ, ແຕ່ stock ຈະບໍ່ຖືກລຶບ.`)) return
+    setReportsLoading(true)
+    const { error } = await supabase.rpc('close_sales_month', { p_year: year, p_month: month, p_delete_sales: true })
+    setReportsLoading(false)
+    if (error) return setNotice('ປິດເດືອນບໍ່ສຳເລັດ: ' + error.message + ' — ກະລຸນາ Run supabase-monthly-archive.sql ກ່ອນ')
+    setNotice(`ປິດເດືອນ ${month}/${year} ສຳເລັດ — stock ຍັງຢູ່ຄືເກົ່າ`)
+    await loadReports()
+  }
+
   useEffect(() => {
     if (!supabase) {
       setProductsLoading(false)
@@ -95,6 +144,10 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
       .subscribe()
     return () => supabase.removeChannel(channel)
   }, [])
+
+  useEffect(() => {
+    if (active === 'reports') loadReports()
+  }, [active])
 
   useEffect(() => {
     const payload = { cart, total, cash: Number(cash || 0), change, paymentOpen: showPayment, paymentMethod }
@@ -534,7 +587,15 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
         </aside>}
       </section>}
       {canManage && active === 'products' && <section className="page-card"><div className="section-top"><div><h2>ສິນຄ້າໃນສາງ</h2><p>ຈັດການສະຕັອກ ແລະ ຕົ້ນທຶນສະເລ່ຍ</p></div><div className="head-actions"><button className="stock-shortcut" onClick={() => openManualProduct()}>+ ເພີ່ມສິນຄ້າໃໝ່</button><button className="primary" onClick={() => setShowStockIn(true)}>+ ຮັບສິນຄ້າເຂົ້າ</button></div></div><table><thead><tr><th>ສິນຄ້າ</th><th>Barcode</th><th>ສະຕັອກ</th><th>ຕົ້ນທຶນສະເລ່ຍ</th><th>ລາຄາຂາຍ</th><th>ສະຖານະ</th><th>ຈັດການ</th></tr></thead><tbody>{products.map(p => <tr key={p.id}><td><strong>{p.name}</strong></td><td>{p.barcode}</td><td>{p.stock} {p.unit}</td><td>{money(p.cost)}</td><td>{money(p.price)}</td><td><span className={p.stock <= 0 ? 'status out' : p.stock <= 5 ? 'status low' : 'status'}>{p.stock <= 0 ? 'ໝົດ' : p.stock <= 5 ? 'ໃກ້ຈະໝົດ' : 'ປົກກະຕິ'}</span></td><td><div className="row-actions"><button onClick={() => setEditingProduct(p)}>ແກ້ໄຂ</button><button onClick={() => setAdjustingProduct(p)}>ລົບສະຕັອກ</button><button className="danger-link" onClick={() => deleteProduct(p)}>ຢຸດຂາຍ</button></div></td></tr>)}</tbody></table></section>}
-      {active === 'reports' && <section className="report-grid"><div className="metric"><small>ຍອດຂາຍມື້ນີ້</small><strong>1,245,000 ₭</strong><span>↑ 12.5% ຈາກມື້ວານ</span></div><div className="metric"><small>ກຳໄລຂັ້ນຕົ້ນ</small><strong>382,500 ₭</strong><span>30.7% ຂອງຍອດຂາຍ</span></div><div className="metric"><small>ຈຳນວນບິນ</small><strong>58 ບິນ</strong><span>ສະເລ່ຍ 21,466 ₭ / ບິນ</span></div><div className="page-card report"><h2>ສະຫຼຸບກຳໄລ</h2><p>ລາຍງານນີ້ຄິດໄລ່ຈາກຕົ້ນທຶນສະເລ່ຍຂອງສິນຄ້າ.</p><div className="bar-chart">{[48,68,42,80,58,92,73].map((n,i)=><i key={i} style={{height:n+'%'}}/> )}</div></div></section>}
+      {active === 'reports' && <section className="report-grid">
+        <div className="metric"><small>ຍອດຂາຍເດືອນນີ້</small><strong>{money(currentMonthReport.sales)}</strong><span>{currentMonthReport.orders} ບິນ</span></div>
+        <div className="metric"><small>ຕົ້ນທຶນເດືອນນີ້</small><strong>{money(currentMonthReport.cost)}</strong><span>ຄິດຈາກ cost_at_sale</span></div>
+        <div className="metric"><small>ກຳໄລເດືອນນີ້</small><strong>{money(currentMonthReport.profit)}</strong><span>{currentMonthReport.sales > 0 ? `${Math.round((currentMonthReport.profit / currentMonthReport.sales) * 100)}%` : '0%'} ຂອງຍອດຂາຍ</span></div>
+        <div className="page-card report">
+          <div className="section-top"><div><h2>Archive ກຳໄລລາຍເດືອນ</h2><p>ເກັບຍອດຂາຍ, ຕົ້ນທຶນ ແລະ ກຳໄລໄວ້ກ່ອນ clear ບິນເກົ່າ. Stock ບໍ່ຖືກລຶບ.</p></div><button className="primary" disabled={reportsLoading} onClick={closePreviousMonth}>{reportsLoading ? 'ກຳລັງປິດ...' : 'ປິດເດືອນທີ່ແລ້ວ'}</button></div>
+          <div className="archive-list">{monthlyReports.length === 0 ? <div className="empty archive-empty"><span>▤</span><p>ຍັງບໍ່ມີ archive</p><small>Run supabase-monthly-archive.sql ແລ້ວກົດ “ປິດເດືອນທີ່ແລ້ວ”.</small></div> : monthlyReports.map((report) => <div className="archive-row" key={report.id}><div><strong>{report.month}/{report.year}</strong><small>{report.orders_count} ບິນ · {Number(report.items_count || 0)} ຊິ້ນ</small></div><div><span>ຂາຍ</span><b>{money(Number(report.total_sales || 0))}</b></div><div><span>ຕົ້ນທຶນ</span><b>{money(Number(report.total_cost || 0))}</b></div><div><span>ກຳໄລ</span><b className="profit">{money(Number(report.gross_profit || 0))}</b></div></div>)}</div>
+        </div>
+      </section>}
       {active === 'cash' && <section className="page-card cash-close"><h2>ປິດຍອດກະເງິນ</h2><p>ບັນທຶກເງິນສົດເພື່ອກວດສອບສ່ວນຕ່າງ.</p><div className="drawer"><label>ເງິນທອນເລີ່ມຕົ້ນ<input placeholder="0 ₭" /></label><label>ເງິນສົດທີ່ນັບໄດ້<input placeholder="0 ₭" /></label><button className="primary">ບັນທຶກປິດຍອດ</button></div></section>}
     </main>
     {holds.length > 0 && <div className="hold-dock"><strong>ບິນທີ່ພັກໄວ້ ({holds.length})</strong>{holds.map(h => <button key={h.id} onClick={() => recall(h)}>{h.label} · {money(h.total)} ↗</button>)}</div>}
