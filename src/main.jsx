@@ -7,14 +7,11 @@ if (import.meta.env.DEV) {
   document.documentElement.dataset.devBuild = String(Date.now())
 }
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', async () => {
-    const registrations = await navigator.serviceWorker.getRegistrations()
-    await Promise.all(registrations.map((registration) => registration.unregister()))
-    if ('caches' in window) {
-      const keys = await caches.keys()
-      await Promise.all(keys.map((key) => caches.delete(key)))
-    }
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      // ຖ້າ browser ບໍ່ຮອງຮັບ ຫຼື hosting ບລັອກ, app ຍັງໃຊ້ງານໄດ້ປົກກະຕິ.
+    })
   })
 }
 

@@ -33,6 +33,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   const [showAddProduct, setShowAddProduct] = useState(false)
   const [editingProduct, setEditingProduct] = useState(null)
   const [adjustingProduct, setAdjustingProduct] = useState(null)
+  const [showReceiptPopup, setShowReceiptPopup] = useState(false)
   const [showPayment, setShowPayment] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [printReceipt, setPrintReceipt] = useState(true)
@@ -40,6 +41,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   const [posCameraMode, setPosCameraMode] = useState(false)
   const videoRef = useRef(null)
   const posVideoRef = useRef(null)
+  const cashInputRef = useRef(null)
   const streamRef = useRef(null)
   const posStreamRef = useRef(null)
   const scanLoopRef = useRef(0)
@@ -94,28 +96,46 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   }, [])
 
   useEffect(() => {
+    const payload = { cart, total, cash: Number(cash || 0), change }
+    localStorage.setItem('kennyxpay-current-sale', JSON.stringify(payload))
     if (!supabase) return
     const channel = supabase.channel('customer-display')
     channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') channel.send({ type: 'broadcast', event: 'cart', payload: { cart, total, cash: Number(cash || 0), change } })
+      if (status === 'SUBSCRIBED') channel.send({ type: 'broadcast', event: 'cart', payload })
     })
     return () => supabase.removeChannel(channel)
   }, [cart, total, cash, change])
+
+  useEffect(() => {
+    if (!cart.length) setShowReceiptPopup(false)
+  }, [cart.length])
 
   useEffect(() => () => { stopBarcodeCamera(); stopPosCameraScanner() }, [])
 
   useEffect(() => {
     if (!showPayment) return
+    setTimeout(() => {
+      if (paymentMethod === 'cash') cashInputRef.current?.focus()
+    }, 50)
     const onKeyDown = (event) => {
-      if (event.key === '*') { event.preventDefault(); setPaymentMethod('cash') }
+      const tag = event.target?.tagName
+      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+      if (event.key === '*') { event.preventDefault(); setPaymentMethod('cash'); setTimeout(() => cashInputRef.current?.focus(), 50) }
       if (event.key === '-') { event.preventDefault(); setPaymentMethod('transfer') }
       if (event.key === '+') { event.preventDefault(); setPrintReceipt((value) => !value) }
       if (event.key === 'Enter') { event.preventDefault(); checkout() }
       if (event.key === 'Escape') { event.preventDefault(); setShowPayment(false) }
+      if (isTyping && !['Enter', 'Escape', '*', '-', '+'].includes(event.key)) return
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [showPayment, cart, cash, paymentMethod, printReceipt])
+
+  const openPaymentPopup = () => {
+    if (!cart.length) return
+    setPaymentMethod('cash')
+    setShowPayment(true)
+  }
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -125,7 +145,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
       if (active !== 'sale') return
       if (event.key === 'Enter' && cart.length) {
         event.preventDefault()
-        setShowPayment(true)
+        openPaymentPopup()
       }
       if (event.key === 'Backspace' && cart.length) {
         event.preventDefault()
@@ -233,6 +253,8 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
 
   const addProduct = (product) => {
     if (product.stock < 1) return setNotice('ສິນຄ້ານີ້ໝົດສະຕັອກແລ້ວ')
+    setActive('sale')
+    setShowReceiptPopup(true)
     setLastAddedId(product.id)
     setCart((current) => {
       const found = current.find((item) => item.id === product.id)
@@ -303,10 +325,10 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   const holdOrder = () => {
     if (!cart.length) return
     setHolds((items) => [...items, { id: Date.now(), label: `ບິນ #${items.length + 1}`, cart, total }])
-    setCart([]); setCash(''); setNotice('ພັກບິນແລ້ວ')
+    setCart([]); setCash(''); setShowReceiptPopup(false); setNotice('ພັກບິນແລ້ວ')
   }
 
-  const recall = (hold) => { setCart(hold.cart); setHolds((items) => items.filter((item) => item.id !== hold.id)); setActive('sale'); setNotice('ເອີ້ນບິນກັບຄືນແລ້ວ') }
+  const recall = (hold) => { setCart(hold.cart); setShowReceiptPopup(true); setHolds((items) => items.filter((item) => item.id !== hold.id)); setActive('sale'); setNotice('ເອີ້ນບິນກັບຄືນແລ້ວ') }
 
   const deleteProduct = async (product) => {
     if (!window.confirm(`ຢືນຢັນຢຸດຂາຍ/ລຶບ “${product.name}” ອອກຈາກໜ້າຂາຍບໍ?`)) return
@@ -388,7 +410,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
       await Promise.all(cart.filter((item) => typeof item.id === 'string').map((item) => supabase.from('products').update({ stock_quantity: Math.max(0, item.stock - item.qty) }).eq('id', item.id)))
     }
     setProducts((all) => all.map((p) => { const line = cart.find((c) => c.id === p.id); return line ? { ...p, stock: p.stock - line.qty } : p }))
-    setCart([]); setCash(''); setShowPayment(false); setNotice(`ຊຳລະເງິນສຳເລັດ (${paymentMethod === 'cash' ? 'ເງິນສົດ' : 'ເງິນໂອນ'}) — ກຳໄລຂັ້ນຕົ້ນ ` + money(profit))
+    setCart([]); setCash(''); setShowPayment(false); setShowReceiptPopup(false); setNotice(`ຊຳລະເງິນສຳເລັດ (${paymentMethod === 'cash' ? 'ເງິນສົດ' : 'ເງິນໂອນ'}) — ກຳໄລຂັ້ນຕົ້ນ ` + money(profit))
   }
 
   const stockIn = async (event) => {
@@ -482,9 +504,9 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
           <div className="sale-shortcuts"><span><b>Enter</b> ຊຳລະເງິນ</span><span><b>Backspace</b> ຍ້ອນກັບລາຍການຫຼ້າສຸດ</span></div>
           <div className="product-grid">{productsLoading ? <div className="empty products-empty"><span>⌛</span><p>ກຳລັງໂຫຼດສິນຄ້າຈາກ Supabase...</p></div> : filtered.length === 0 ? <div className="empty products-empty"><span>+</span><p>ຍັງບໍ່ມີສິນຄ້າໃນ Supabase</p><small>ກົດ “+ ເພີ່ມສິນຄ້າໃໝ່” ເພື່ອເພີ່ມຂໍ້ມູນຈິງ</small></div> : filtered.map((p) => <button className="product" key={p.id} onClick={() => addProduct(p)}><span className="product-icon" style={{background:p.color}}>▣</span><strong>{p.name}</strong><small>{p.stock} {p.unit} ເຫຼືອ</small><b>{money(p.price)}</b></button>)}</div>
         </div>
-        <aside className="cart"><div className="cart-title"><div><span className="cart-dot">●</span><strong>ລາຍການຂາຍ</strong></div><small>{cart.length} ລາຍການ</small></div>
+        <aside className={showReceiptPopup ? 'cart receipt-popup' : 'cart'}><div className="cart-title"><div><span className="cart-dot">●</span><strong>ລາຍການຂາຍ</strong></div><div className="cart-title-actions"><small>{cart.length} ລາຍການ</small>{showReceiptPopup && <button className="cart-close" type="button" onClick={() => setShowReceiptPopup(false)}>×</button>}</div></div>
           <div className="cart-items">{cart.length === 0 ? <div className="empty"><span>⌑</span><p>ຍັງບໍ່ມີລາຍການ</p><small>ສະແກນ ຫຼື ເລືອກສິນຄ້າເພື່ອເລີ່ມຂາຍ</small></div> : cart.map((item) => <div className="line" key={item.id}><div className="line-top"><strong>{item.name}</strong><button onClick={() => changeQty(item.id, -item.qty)}>×</button></div><small>{money(item.price)} / {item.unit}</small><div className="line-bottom"><div className="qty"><button onClick={() => changeQty(item.id,-1)}>−</button><b>{item.qty}</b><button onClick={() => changeQty(item.id,1)}>+</button></div><strong>{money(item.price * item.qty)}</strong></div></div>)}</div>
-          <div className="cart-footer"><div className="sum"><span>ລວມທັງໝົດ</span><strong>{money(total)}</strong></div><div className="cart-actions"><button className="hold" onClick={holdOrder}>♧ ພັກບິນ</button><button className="pay" onClick={() => cart.length && setShowPayment(true)}>ຊຳລະເງິນ <span>→</span></button></div></div>
+          <div className="cart-footer"><div className="sum"><span>ລວມທັງໝົດ</span><strong>{money(total)}</strong></div><div className="cart-actions"><button className="hold" onClick={holdOrder}>♧ ພັກບິນ</button><button className="pay" onClick={openPaymentPopup}>ຊຳລະເງິນ <span>→</span></button></div></div>
         </aside>
       </section>}
       {canManage && active === 'products' && <section className="page-card"><div className="section-top"><div><h2>ສິນຄ້າໃນສາງ</h2><p>ຈັດການສະຕັອກ ແລະ ຕົ້ນທຶນສະເລ່ຍ</p></div><div className="head-actions"><button className="stock-shortcut" onClick={() => openManualProduct()}>+ ເພີ່ມສິນຄ້າໃໝ່</button><button className="primary" onClick={() => setShowStockIn(true)}>+ ຮັບສິນຄ້າເຂົ້າ</button></div></div><table><thead><tr><th>ສິນຄ້າ</th><th>Barcode</th><th>ສະຕັອກ</th><th>ຕົ້ນທຶນສະເລ່ຍ</th><th>ລາຄາຂາຍ</th><th>ສະຖານະ</th><th>ຈັດການ</th></tr></thead><tbody>{products.map(p => <tr key={p.id}><td><strong>{p.name}</strong></td><td>{p.barcode}</td><td>{p.stock} {p.unit}</td><td>{money(p.cost)}</td><td>{money(p.price)}</td><td><span className={p.stock <= 0 ? 'status out' : p.stock <= 5 ? 'status low' : 'status'}>{p.stock <= 0 ? 'ໝົດ' : p.stock <= 5 ? 'ໃກ້ຈະໝົດ' : 'ປົກກະຕິ'}</span></td><td><div className="row-actions"><button onClick={() => setEditingProduct(p)}>ແກ້ໄຂ</button><button onClick={() => setAdjustingProduct(p)}>ລົບສະຕັອກ</button><button className="danger-link" onClick={() => deleteProduct(p)}>ຢຸດຂາຍ</button></div></td></tr>)}</tbody></table></section>}
@@ -493,7 +515,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
     </main>
     {holds.length > 0 && <div className="hold-dock"><strong>ບິນທີ່ພັກໄວ້ ({holds.length})</strong>{holds.map(h => <button key={h.id} onClick={() => recall(h)}>{h.label} · {money(h.total)} ↗</button>)}</div>}
     {showAddProduct && <div className="modal-backdrop"><form className="modal product-modal" onSubmit={saveNewProduct}><button type="button" className="close" onClick={() => { stopBarcodeCamera(); setShowAddProduct(false) }}>×</button><span className="modal-icon">+</span><h2>ເພີ່ມສິນຄ້າໃໝ່</h2><p>ໃຫ້ພະນັກງານເພີ່ມສິນຄ້າເອງໄດ້ ໂດຍບໍ່ຕ້ອງແກ້ Code.</p><label>Barcode<div className="barcode-row"><input name="barcode" value={newBarcode} onChange={(e) => setNewBarcode(e.target.value.trim())} placeholder="ສະແກນ ຫຼື ພິມ Barcode" required autoFocus /><button type="button" onClick={cameraMode ? stopBarcodeCamera : startBarcodeCamera}>{cameraMode ? 'ປິດກ້ອງ' : 'ເປີດກ້ອງ'}</button></div></label>{cameraMode && <video className="scanner-video" ref={videoRef} muted playsInline />}<label>ຊື່ສິນຄ້າ<input name="name" required /></label><div className="form-row"><label>ຕົ້ນທຶນ<input name="cost" type="number" min="0" step="1" required /></label><label>ລາຄາຂາຍ<input name="price" type="number" min="1" step="1" required /></label></div><div className="form-row"><label>ຈຳນວນເລີ່ມຕົ້ນ<input name="stock" type="number" min="0" step="1" defaultValue="0" /></label><label>ຫົວໜ່ວຍ<input name="unit" defaultValue="ອັນ" /></label></div><div className="validation-note"><strong>ການກວດກ່ອນບັນທຶກ</strong><span>ຫ້າມ Barcode ຊ້ຳ, ລາຄາຕ້ອງຖືກຕ້ອງ, ແລະຈະເຕືອນຖ້າລາຄາຂາຍຕ່ຳກວ່າຕົ້ນທຶນ.</span></div><button className="primary wide">ບັນທຶກສິນຄ້າ</button></form></div>}
-    {showPayment && <div className="modal-backdrop"><div className="modal payment-modal"><button type="button" className="close" onClick={() => setShowPayment(false)}>×</button><span className="modal-icon">₭</span><h2>ຊຳລະເງິນ</h2><p>ເລືອກວິທີຈ່າຍ ແລະ ກົດ Enter ເພື່ອຢືນຢັນ.</p><div className="payment-choice"><button className={paymentMethod === 'cash' ? 'selected' : ''} onClick={() => setPaymentMethod('cash')}><b>*</b><span>ເງິນສົດ</span></button><button className={paymentMethod === 'transfer' ? 'selected' : ''} onClick={() => { setPaymentMethod('transfer'); setCash(String(total)) }}><b>-</b><span>ເງິນໂອນ</span></button></div>{paymentMethod === 'cash' && <label>ຮັບເງິນສົດ<input inputMode="numeric" autoFocus placeholder="0" value={cash} onChange={(e) => setCash(e.target.value.replace(/\D/g,''))}/></label>}{paymentMethod === 'transfer' && <div className="transfer-qr"><img src="/payment-qr.png" alt="QR Code ສຳລັບໂອນເງິນ" /><strong>ສະແກນ QR ເພື່ອໂອນເງິນ</strong><small>ກວດສອບຍອດເງິນກ່ອນກົດຢືນຢັນ</small></div>}<div className="payment-summary"><span>ລວມ</span><strong>{money(total)}</strong></div>{paymentMethod === 'cash' && <div className="payment-summary change-row"><span>ເງິນທອນ</span><strong>{money(change)}</strong></div>}<button className={printReceipt ? 'receipt-toggle on' : 'receipt-toggle'} onClick={() => setPrintReceipt((value) => !value)}><b>+</b>{printReceipt ? 'ຮັບບິນ' : 'ບໍ່ຮັບບິນ'}</button><div className="shortcut-help"><span>* ເງິນສົດ</span><span>- ເງິນໂອນ</span><span>+ ສະຫຼັບບິນ</span><span>Enter ຢືນຢັນ</span></div><button className="primary wide" onClick={checkout}>ຢືນຢັນຮັບເງິນ</button></div></div>}
+    {showPayment && <div className="modal-backdrop"><div className="modal payment-modal" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); checkout() } }}><button type="button" className="close" onClick={() => setShowPayment(false)}>×</button><span className="modal-icon">₭</span><h2>ຊຳລະເງິນ</h2><p>ເລືອກວິທີຈ່າຍ ແລະ ກົດ Enter ເພື່ອຢືນຢັນ.</p><div className="payment-choice"><button type="button" className={paymentMethod === 'cash' ? 'selected' : ''} onClick={() => { setPaymentMethod('cash'); setTimeout(() => cashInputRef.current?.focus(), 50) }}><b>*</b><span>ເງິນສົດ</span></button><button type="button" className={paymentMethod === 'transfer' ? 'selected' : ''} onClick={() => { setPaymentMethod('transfer'); setCash(String(total)) }}><b>-</b><span>ເງິນໂອນ</span></button></div>{paymentMethod === 'cash' && <label>ຮັບເງິນສົດ<input ref={cashInputRef} inputMode="numeric" autoFocus placeholder="0" value={cash} onChange={(e) => setCash(e.target.value.replace(/\D/g,''))} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); checkout() } }}/></label>}{paymentMethod === 'transfer' && <div className="transfer-qr"><img src="/payment-qr.png" alt="QR Code ສຳລັບໂອນເງິນ" /><strong>ສະແກນ QR ເພື່ອໂອນເງິນ</strong><small>ກວດສອບຍອດເງິນກ່ອນກົດຢືນຢັນ</small></div>}<div className="payment-summary"><span>ລວມ</span><strong>{money(total)}</strong></div>{paymentMethod === 'cash' && <div className="payment-summary change-row"><span>ເງິນທອນ</span><strong>{money(change)}</strong></div>}<button type="button" className={printReceipt ? 'receipt-toggle on' : 'receipt-toggle'} onClick={() => setPrintReceipt((value) => !value)}><b>+</b>{printReceipt ? 'ຮັບບິນ' : 'ບໍ່ຮັບບິນ'}</button><div className="shortcut-help"><span>* ເງິນສົດ</span><span>- ເງິນໂອນ</span><span>+ ສະຫຼັບບິນ</span><span>Enter ຢືນຢັນ</span></div><button type="button" className="primary wide" onClick={checkout}>ຢືນຢັນຮັບເງິນ</button></div></div>}
     {showStockIn && <div className="modal-backdrop"><form className="modal" onSubmit={stockIn}><button type="button" className="close" onClick={() => setShowStockIn(false)}>×</button><span className="modal-icon">↓</span><h2>ຮັບສິນຄ້າເຂົ້າ</h2><p>ລະບົບຈະຄິດຕົ້ນທຶນສະເລ່ຍໃໝ່ອັດຕະໂນມັດ.</p><label>ເລືອກສິນຄ້າ<select name="productId" required defaultValue={products[0]?.id ?? ''}>{products.length === 0 && <option value="">ຍັງບໍ່ມີສິນຄ້າ</option>}{products.map((p) => <option key={p.id} value={p.id}>{p.name} (ເຫຼືອ {p.stock})</option>)}</select></label><label>ຈຳນວນຮັບເຂົ້າ<input name="quantity" type="number" min="1" step="1" required autoFocus /></label><label>ລາຄາຊື້ຕໍ່ໜ່ວຍ<input name="cost" type="number" min="0" required /></label><button className="primary wide">ບັນທຶກສະຕັອກ</button></form></div>}
     {editingProduct && <div className="modal-backdrop"><form className="modal product-modal" onSubmit={saveProductEdit}><button type="button" className="close" onClick={() => setEditingProduct(null)}>×</button><span className="modal-icon">✎</span><h2>ແກ້ໄຂສິນຄ້າ</h2><p>ປ່ຽນຊື່, Barcode, ລາຄາ ຫຼື ຈຳນວນສະຕັອກ.</p><label>Barcode<input name="barcode" defaultValue={editingProduct.barcode} required autoFocus /></label><label>ຊື່ສິນຄ້າ<input name="name" defaultValue={editingProduct.name} required /></label><div className="form-row"><label>ຕົ້ນທຶນ<input name="cost" type="number" min="0" step="1" defaultValue={editingProduct.cost} required /></label><label>ລາຄາຂາຍ<input name="price" type="number" min="1" step="1" defaultValue={editingProduct.price} required /></label></div><div className="form-row"><label>ຈຳນວນສະຕັອກ<input name="stock" type="number" min="0" step="1" defaultValue={editingProduct.stock} required /></label><label>ຫົວໜ່ວຍ<input name="unit" defaultValue={editingProduct.unit} /></label></div><button className="primary wide">ບັນທຶກການແກ້ໄຂ</button></form></div>}
     {adjustingProduct && <div className="modal-backdrop"><form className="modal" onSubmit={removeStock}><button type="button" className="close" onClick={() => setAdjustingProduct(null)}>×</button><span className="modal-icon">−</span><h2>ລົບສະຕັອກ</h2><p>{adjustingProduct.name} ເຫຼືອ {adjustingProduct.stock} {adjustingProduct.unit}</p><label>ຈຳນວນທີ່ຈະລົບ<input name="quantity" type="number" min="1" step="1" required autoFocus /></label><label>ເຫດຜົນ<input name="reason" placeholder="ເສຍຫາຍ / ນັບຜິດ / ສິນຄ້າຫາຍ" /></label><button className="primary wide">ບັນທຶກລົບສະຕັອກ</button></form></div>}
@@ -501,14 +523,22 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
 }
 
 function CustomerDisplay() {
-  const [sale, setSale] = useState({ cart: [], total: 0, cash: 0, change: 0 })
+  const [sale, setSale] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('kennyxpay-current-sale')) || { cart: [], total: 0, cash: 0, change: 0 } }
+    catch { return { cart: [], total: 0, cash: 0, change: 0 } }
+  })
 
   useEffect(() => {
-    if (!supabase) return
+    const onStorage = (event) => {
+      if (event.key !== 'kennyxpay-current-sale' || !event.newValue) return
+      try { setSale(JSON.parse(event.newValue)) } catch {}
+    }
+    window.addEventListener('storage', onStorage)
+    if (!supabase) return () => window.removeEventListener('storage', onStorage)
     const channel = supabase.channel('customer-display')
       .on('broadcast', { event: 'cart' }, ({ payload }) => setSale(payload))
       .subscribe()
-    return () => supabase.removeChannel(channel)
+    return () => { window.removeEventListener('storage', onStorage); supabase.removeChannel(channel) }
   }, [])
 
   return <main className="customer-display">
