@@ -23,7 +23,7 @@ const authErrorMessage = (message = '') => {
 const money = (value) => new Intl.NumberFormat('lo-LA').format(value) + ' ₭'
 const laoWeekdays = ['ວັນອາທິດ', 'ວັນຈັນ', 'ວັນອັງຄານ', 'ວັນພຸດ', 'ວັນພະຫັດ', 'ວັນສຸກ', 'ວັນເສົາ']
 const laoMonths = ['ມັງກອນ', 'ກຸມພາ', 'ມີນາ', 'ເມສາ', 'ພຶດສະພາ', 'ມິຖຸນາ', 'ກໍລະກົດ', 'ສິງຫາ', 'ກັນຍາ', 'ຕຸລາ', 'ພະຈິກ', 'ທັນວາ']
-const APP_BUILD = 'owner-up-to-5-20260715'
+const APP_BUILD = 'stock-search-20260716'
 
 function PosApp({ user, role = 'worker', onOwnerHome }) {
   const [products, setProducts] = useState([])
@@ -34,6 +34,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   const [cart, setCart] = useState([])
   const [lastAddedId, setLastAddedId] = useState(null)
   const [search, setSearch] = useState('')
+  const [stockSearch, setStockSearch] = useState('')
   const [active, setActive] = useState('sale')
   const [holds, setHolds] = useState([])
   const [cash, setCash] = useState('')
@@ -600,6 +601,18 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   }
 
   const filtered = products.filter((p) => p.name.includes(search) || p.barcode.includes(search))
+  const stockQuery = stockSearch.trim().toLowerCase()
+  const stockFiltered = stockQuery
+    ? products.filter((p) => String(p.name || '').toLowerCase().includes(stockQuery) || String(p.barcode || '').toLowerCase().includes(stockQuery))
+    : products
+  const runStockSearch = () => {
+    const query = stockSearch.trim()
+    if (!query) {
+      setNotice('ພິມຊື່ສິນຄ້າ ຫຼື ສະແກນ Barcode ກ່ອນ')
+      return
+    }
+    setNotice(`ພົບ ${stockFiltered.length} ລາຍການສຳລັບ “${query}”`)
+  }
 
   return <div className={showPayment ? 'app-shell payment-open' : 'app-shell'}>
     <aside className="sidebar">
@@ -630,7 +643,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
           <div className="cart-footer"><div className="sum"><span>ລວມທັງໝົດ</span><strong>{money(total)}</strong></div><div className="cart-actions"><button className="hold" onClick={holdOrder}>♧ ພັກບິນ</button><button className="pay" onClick={openPaymentPopup}>ຊຳລະເງິນ <span>→</span></button></div></div>
         </aside>}
       </section>}
-      {canManage && active === 'products' && <section className="page-card"><div className="section-top"><div><h2>ສິນຄ້າໃນສາງ</h2><p>ຈັດການສະຕັອກ ແລະ ຕົ້ນທຶນສະເລ່ຍ</p></div><div className="head-actions"><button className="stock-shortcut" onClick={() => openManualProduct()}>+ ເພີ່ມສິນຄ້າໃໝ່</button><button className="primary" onClick={() => setShowStockIn(true)}>+ ຮັບສິນຄ້າເຂົ້າ</button></div></div><table><thead><tr><th>ສິນຄ້າ</th><th>Barcode</th><th>ສະຕັອກ</th><th>ຕົ້ນທຶນສະເລ່ຍ</th><th>ລາຄາຂາຍ</th><th>ສະຖານະ</th><th>ຈັດການ</th></tr></thead><tbody>{products.map(p => <tr key={p.id}><td><strong>{p.name}</strong></td><td>{p.barcode}</td><td>{p.stock} {p.unit}</td><td>{money(p.cost)}</td><td>{money(p.price)}</td><td><span className={p.stock <= 0 ? 'status out' : p.stock <= 5 ? 'status low' : 'status'}>{p.stock <= 0 ? 'ໝົດ' : p.stock <= 5 ? 'ໃກ້ຈະໝົດ' : 'ປົກກະຕິ'}</span></td><td><div className="row-actions"><button onClick={() => setEditingProduct(p)}>ແກ້ໄຂ</button><button onClick={() => setAdjustingProduct(p)}>ລົບສະຕັອກ</button><button className="danger-link" onClick={() => deleteProduct(p)}>ຢຸດຂາຍ</button></div></td></tr>)}</tbody></table></section>}
+      {canManage && active === 'products' && <section className="page-card"><div className="section-top"><div><h2>ສິນຄ້າໃນສາງ</h2><p>ຈັດການສະຕັອກ ແລະ ຕົ້ນທຶນສະເລ່ຍ</p></div><div className="head-actions"><button className="stock-shortcut" onClick={() => openManualProduct()}>+ ເພີ່ມສິນຄ້າໃໝ່</button><button className="primary" onClick={() => setShowStockIn(true)}>+ ຮັບສິນຄ້າເຂົ້າ</button></div></div><div className="search stock-search"><span>⌕</span><input autoFocus value={stockSearch} onChange={(e) => setStockSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') runStockSearch() }} placeholder="ສະແກນ Barcode ຫຼື ພິມຊື່ສິນຄ້າເພື່ອຄົ້ນຫາ..." /><button onClick={runStockSearch}>ຄົ້ນຫາ</button><button className="soft-btn" onClick={() => { setStockSearch(''); setNotice('ລ້າງການຄົ້ນຫາແລ້ວ') }}>ລ້າງ</button></div><p className="stock-search-note">ໃຊ້ເຄື່ອງສະແກນໄດ້ເລີຍ: ກົດໃສ່ຊ່ອງນີ້ 1 ຄັ້ງ ແລ້ວສະແກນ / ຫຼືພິມຊື່ສິນຄ້າ.</p><table><thead><tr><th>ສິນຄ້າ</th><th>Barcode</th><th>ສະຕັອກ</th><th>ຕົ້ນທຶນສະເລ່ຍ</th><th>ລາຄາຂາຍ</th><th>ສະຖານະ</th><th>ຈັດການ</th></tr></thead><tbody>{stockFiltered.length === 0 ? <tr><td className="empty-row" colSpan="7">ບໍ່ພົບສິນຄ້າທີ່ຄົ້ນຫາ</td></tr> : stockFiltered.map(p => <tr key={p.id}><td><strong>{p.name}</strong></td><td>{p.barcode}</td><td>{p.stock} {p.unit}</td><td>{money(p.cost)}</td><td>{money(p.price)}</td><td><span className={p.stock <= 0 ? 'status out' : p.stock <= 5 ? 'status low' : 'status'}>{p.stock <= 0 ? 'ໝົດ' : p.stock <= 5 ? 'ໃກ້ຈະໝົດ' : 'ປົກກະຕິ'}</span></td><td><div className="row-actions"><button onClick={() => setEditingProduct(p)}>ແກ້ໄຂ</button><button onClick={() => setAdjustingProduct(p)}>ລົບສະຕັອກ</button><button className="danger-link" onClick={() => deleteProduct(p)}>ຢຸດຂາຍ</button></div></td></tr>)}</tbody></table></section>}
       {canManage && active === 'reports' && <section className="report-grid">
         <div className="metric"><small>ຍອດຂາຍເດືອນນີ້</small><strong>{money(currentMonthReport.sales)}</strong><span>{currentMonthReport.orders} ບິນ</span></div>
         <div className="metric"><small>ຕົ້ນທຶນເດືອນນີ້</small><strong>{money(currentMonthReport.cost)}</strong><span>ຄິດຈາກ cost_at_sale</span></div>
