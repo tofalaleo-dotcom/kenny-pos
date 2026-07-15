@@ -16,7 +16,7 @@ const authErrorMessage = (message = '') => {
 const money = (value) => new Intl.NumberFormat('lo-LA').format(value) + ' ₭'
 const laoWeekdays = ['ວັນອາທິດ', 'ວັນຈັນ', 'ວັນອັງຄານ', 'ວັນພຸດ', 'ວັນພະຫັດ', 'ວັນສຸກ', 'ວັນເສົາ']
 const laoMonths = ['ມັງກອນ', 'ກຸມພາ', 'ມີນາ', 'ເມສາ', 'ພຶດສະພາ', 'ມິຖຸນາ', 'ກໍລະກົດ', 'ສິງຫາ', 'ກັນຍາ', 'ຕຸລາ', 'ພະຈິກ', 'ທັນວາ']
-const APP_BUILD = 'fix-owner-active-products-20260715'
+const APP_BUILD = 'fix-worker-sale-only-20260715'
 
 function PosApp({ user, role = 'worker', onOwnerHome }) {
   const [products, setProducts] = useState([])
@@ -69,6 +69,17 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
     const now = new Date()
     return `${laoWeekdays[now.getDay()]}, ${now.getDate()} ${laoMonths[now.getMonth()]} ${now.getFullYear()}`
   }, [])
+
+  useEffect(() => {
+    if (!canManage && active !== 'sale') setActive('sale')
+    if (!canManage) {
+      setShowAddProduct(false)
+      setShowStockIn(false)
+      setEditingProduct(null)
+      setAdjustingProduct(null)
+      setShowNew(false)
+    }
+  }, [active, canManage])
 
   const loadProducts = async () => {
     if (!supabase) {
@@ -222,6 +233,10 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
   }, [active, cart, showPayment, showAddProduct, showStockIn, lastAddedId])
 
   const openManualProduct = (barcode = '') => {
+    if (!canManage) {
+      setNotice('ບໍ່ພົບ Barcode ນີ້. ກະລຸນາໃຫ້ owner/admin ເພີ່ມສິນຄ້າກ່ອນ.')
+      return
+    }
     setNewBarcode(barcode)
     setShowAddProduct(true)
     setShowNew(false)
@@ -331,7 +346,8 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
     if (!code) return
     const product = products.find((p) => p.barcode === code)
     if (product) { addProduct(product); setSearch(''); setNotice('ເພີ່ມ “' + product.name + '” ແລ້ວ') }
-    else { openManualProduct(code) }
+    else if (canManage) { openManualProduct(code) }
+    else { setSearch(''); setNotice('ບໍ່ພົບ Barcode ນີ້ — ໃຫ້ owner/admin ເພີ່ມສິນຄ້າກ່ອນ') }
   }
 
   useEffect(() => {
@@ -411,6 +427,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
 
   const saveNewProduct = async (event) => {
     event.preventDefault()
+    if (!canManage) return setNotice('worker ບໍ່ມີສິດເພີ່ມສິນຄ້າ')
     if (!supabase || !user) return setNotice('ກະລຸນາເຊື່ອມ Supabase ແລະ login ກ່ອນບັນທຶກສິນຄ້າ')
     const form = new FormData(event.currentTarget)
     const barcode = String(form.get('barcode') || '').trim()
@@ -511,6 +528,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
 
   const stockIn = async (event) => {
     event.preventDefault()
+    if (!canManage) return setNotice('worker ບໍ່ມີສິດຮັບສະຕັອກ')
     const form = new FormData(event.currentTarget)
     const product = products.find((item) => String(item.id) === form.get('productId'))
     const quantity = Number(form.get('quantity'))
@@ -596,9 +614,9 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
           </div>
           <div className="search"><span>⌕</span><input autoFocus placeholder="ສະແກນ Barcode ຫຼື ຄົ້ນຫາສິນຄ້າ..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && scan()} /><button onClick={() => scan()}>ສະແກນ</button><button className={posCameraMode ? 'camera-on' : ''} onClick={posCameraMode ? stopPosCameraScanner : startPosCameraScanner}>{posCameraMode ? 'ປິດກ້ອງ' : 'ເປີດກ້ອງ'}</button></div>
           {posCameraMode && <div className="pos-scanner"><video ref={posVideoRef} muted playsInline /><small>ກຳລັງສະແກນດ້ວຍກ້ອງ... ພົບ Barcode ແລ້ວຈະເພີ່ມເຂົ້າຕະກ້າອັດຕະໂນມັດ</small></div>}
-          <div className="catalog-head"><div><strong>ສິນຄ້າຍອດນິຍົມ</strong><small>{filtered.length} ລາຍການ</small></div>{canManage && <div className="head-actions"><button className="stock-shortcut" onClick={() => openManualProduct()}>+ ເພີ່ມສິນຄ້າໃໝ່</button><button className="stock-shortcut" onClick={() => setShowStockIn(true)}>+ ຮັບສະຕັອກ</button></div>}</div>
+          <div className="catalog-head"><div><strong>ສິນຄ້າຍອດນິຍົມ</strong><small>{filtered.length} ລາຍການ</small></div></div>
           <div className="sale-shortcuts"><span><b>Enter</b> ຊຳລະເງິນ</span><span><b>Backspace</b> ຍ້ອນກັບລາຍການຫຼ້າສຸດ</span></div>
-          <div className="product-grid">{productsLoading ? <div className="empty products-empty"><span>⌛</span><p>ກຳລັງໂຫຼດສິນຄ້າຈາກ Supabase...</p></div> : filtered.length === 0 ? <div className="empty products-empty"><span>+</span><p>ຍັງບໍ່ມີສິນຄ້າໃນ Supabase</p><small>ກົດ “+ ເພີ່ມສິນຄ້າໃໝ່” ເພື່ອເພີ່ມຂໍ້ມູນຈິງ</small></div> : filtered.map((p) => <button className="product" key={p.id} onClick={() => addProduct(p)}><span className="product-icon" style={{background:p.color}}>▣</span><strong>{p.name}</strong><small>{p.stock} {p.unit} ເຫຼືອ</small><b>{money(p.price)}</b></button>)}</div>
+          <div className="product-grid">{productsLoading ? <div className="empty products-empty"><span>⌛</span><p>ກຳລັງໂຫຼດສິນຄ້າຈາກ Supabase...</p></div> : filtered.length === 0 ? <div className="empty products-empty"><span>⌕</span><p>ບໍ່ພົບສິນຄ້າ</p><small>{canManage ? 'ໄປໜ້າ “ສິນຄ້າ & ສະຕັອກ” ເພື່ອເພີ່ມສິນຄ້າໃໝ່' : 'ກະລຸນາໃຫ້ owner/admin ເພີ່ມສິນຄ້າກ່ອນ'}</small></div> : filtered.map((p) => <button className="product" key={p.id} onClick={() => addProduct(p)}><span className="product-icon" style={{background:p.color}}>▣</span><strong>{p.name}</strong><small>{p.stock} {p.unit} ເຫຼືອ</small><b>{money(p.price)}</b></button>)}</div>
         </div>
         {!showPayment && <aside className={showReceiptPopup ? 'cart receipt-popup' : 'cart'}><div className="cart-title"><div><span className="cart-dot">●</span><strong>ລາຍການຂາຍ</strong></div><div className="cart-title-actions"><small>{cart.length} ລາຍການ</small>{showReceiptPopup && <button className="cart-close" type="button" onClick={() => setShowReceiptPopup(false)}>×</button>}</div></div>
           <div className="cart-items">{cart.length === 0 ? <div className="empty"><span>⌑</span><p>ຍັງບໍ່ມີລາຍການ</p><small>ສະແກນ ຫຼື ເລືອກສິນຄ້າເພື່ອເລີ່ມຂາຍ</small></div> : cart.map((item) => <div className="line" key={item.id}><div className="line-top"><strong>{item.name}</strong><button onClick={() => changeQty(item.id, -item.qty)}>×</button></div><small>{money(item.price)} / {item.unit}</small><div className="line-bottom"><div className="qty"><button onClick={() => changeQty(item.id,-1)}>−</button><b>{item.qty}</b><button onClick={() => changeQty(item.id,1)}>+</button></div><strong>{money(item.price * item.qty)}</strong></div></div>)}</div>
@@ -606,7 +624,7 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
         </aside>}
       </section>}
       {canManage && active === 'products' && <section className="page-card"><div className="section-top"><div><h2>ສິນຄ້າໃນສາງ</h2><p>ຈັດການສະຕັອກ ແລະ ຕົ້ນທຶນສະເລ່ຍ</p></div><div className="head-actions"><button className="stock-shortcut" onClick={() => openManualProduct()}>+ ເພີ່ມສິນຄ້າໃໝ່</button><button className="primary" onClick={() => setShowStockIn(true)}>+ ຮັບສິນຄ້າເຂົ້າ</button></div></div><table><thead><tr><th>ສິນຄ້າ</th><th>Barcode</th><th>ສະຕັອກ</th><th>ຕົ້ນທຶນສະເລ່ຍ</th><th>ລາຄາຂາຍ</th><th>ສະຖານະ</th><th>ຈັດການ</th></tr></thead><tbody>{products.map(p => <tr key={p.id}><td><strong>{p.name}</strong></td><td>{p.barcode}</td><td>{p.stock} {p.unit}</td><td>{money(p.cost)}</td><td>{money(p.price)}</td><td><span className={p.stock <= 0 ? 'status out' : p.stock <= 5 ? 'status low' : 'status'}>{p.stock <= 0 ? 'ໝົດ' : p.stock <= 5 ? 'ໃກ້ຈະໝົດ' : 'ປົກກະຕິ'}</span></td><td><div className="row-actions"><button onClick={() => setEditingProduct(p)}>ແກ້ໄຂ</button><button onClick={() => setAdjustingProduct(p)}>ລົບສະຕັອກ</button><button className="danger-link" onClick={() => deleteProduct(p)}>ຢຸດຂາຍ</button></div></td></tr>)}</tbody></table></section>}
-      {active === 'reports' && <section className="report-grid">
+      {canManage && active === 'reports' && <section className="report-grid">
         <div className="metric"><small>ຍອດຂາຍເດືອນນີ້</small><strong>{money(currentMonthReport.sales)}</strong><span>{currentMonthReport.orders} ບິນ</span></div>
         <div className="metric"><small>ຕົ້ນທຶນເດືອນນີ້</small><strong>{money(currentMonthReport.cost)}</strong><span>ຄິດຈາກ cost_at_sale</span></div>
         <div className="metric"><small>ກຳໄລເດືອນນີ້</small><strong>{money(currentMonthReport.profit)}</strong><span>{currentMonthReport.sales > 0 ? `${Math.round((currentMonthReport.profit / currentMonthReport.sales) * 100)}%` : '0%'} ຂອງຍອດຂາຍ</span></div>
@@ -615,14 +633,14 @@ function PosApp({ user, role = 'worker', onOwnerHome }) {
           <div className="archive-list">{monthlyReports.length === 0 ? <div className="empty archive-empty"><span>▤</span><p>ຍັງບໍ່ມີ archive</p><small>Run supabase-monthly-archive.sql ແລ້ວກົດ “ປິດເດືອນທີ່ແລ້ວ”.</small></div> : monthlyReports.map((report) => <div className="archive-row" key={report.id}><div><strong>{report.month}/{report.year}</strong><small>{report.orders_count} ບິນ · {Number(report.items_count || 0)} ຊິ້ນ</small></div><div><span>ຂາຍ</span><b>{money(Number(report.total_sales || 0))}</b></div><div><span>ຕົ້ນທຶນ</span><b>{money(Number(report.total_cost || 0))}</b></div><div><span>ກຳໄລ</span><b className="profit">{money(Number(report.gross_profit || 0))}</b></div></div>)}</div>
         </div>
       </section>}
-      {active === 'cash' && <section className="page-card cash-close"><h2>ປິດຍອດກະເງິນ</h2><p>ບັນທຶກເງິນສົດເພື່ອກວດສອບສ່ວນຕ່າງ.</p><div className="drawer"><label>ເງິນທອນເລີ່ມຕົ້ນ<input placeholder="0 ₭" /></label><label>ເງິນສົດທີ່ນັບໄດ້<input placeholder="0 ₭" /></label><button className="primary">ບັນທຶກປິດຍອດ</button></div></section>}
+      {canManage && active === 'cash' && <section className="page-card cash-close"><h2>ປິດຍອດກະເງິນ</h2><p>ບັນທຶກເງິນສົດເພື່ອກວດສອບສ່ວນຕ່າງ.</p><div className="drawer"><label>ເງິນທອນເລີ່ມຕົ້ນ<input placeholder="0 ₭" /></label><label>ເງິນສົດທີ່ນັບໄດ້<input placeholder="0 ₭" /></label><button className="primary">ບັນທຶກປິດຍອດ</button></div></section>}
     </main>
     {holds.length > 0 && <div className="hold-dock"><strong>ບິນທີ່ພັກໄວ້ ({holds.length})</strong>{holds.map(h => <button key={h.id} onClick={() => recall(h)}>{h.label} · {money(h.total)} ↗</button>)}</div>}
-    {showAddProduct && <div className="modal-backdrop"><form className="modal product-modal" onSubmit={saveNewProduct}><button type="button" className="close" onClick={() => { stopBarcodeCamera(); setShowAddProduct(false) }}>×</button><span className="modal-icon">+</span><h2>ເພີ່ມສິນຄ້າໃໝ່</h2><p>ໃຫ້ພະນັກງານເພີ່ມສິນຄ້າເອງໄດ້ ໂດຍບໍ່ຕ້ອງແກ້ Code.</p><label>Barcode<div className="barcode-row"><input name="barcode" value={newBarcode} onChange={(e) => setNewBarcode(e.target.value.trim())} placeholder="ສະແກນ ຫຼື ພິມ Barcode" required autoFocus /><button type="button" onClick={cameraMode ? stopBarcodeCamera : startBarcodeCamera}>{cameraMode ? 'ປິດກ້ອງ' : 'ເປີດກ້ອງ'}</button></div></label>{cameraMode && <video className="scanner-video" ref={videoRef} muted playsInline />}<label>ຊື່ສິນຄ້າ<input name="name" required /></label><div className="form-row"><label>ຕົ້ນທຶນ<input name="cost" type="number" min="0" step="1" required /></label><label>ລາຄາຂາຍ<input name="price" type="number" min="1" step="1" required /></label></div><div className="form-row"><label>ຈຳນວນເລີ່ມຕົ້ນ<input name="stock" type="number" min="0" step="1" defaultValue="0" /></label><label>ຫົວໜ່ວຍ<input name="unit" defaultValue="ອັນ" /></label></div><div className="validation-note"><strong>ການກວດກ່ອນບັນທຶກ</strong><span>ຫ້າມ Barcode ຊ້ຳ, ລາຄາຕ້ອງຖືກຕ້ອງ, ແລະຈະເຕືອນຖ້າລາຄາຂາຍຕ່ຳກວ່າຕົ້ນທຶນ.</span></div><button className="primary wide">ບັນທຶກສິນຄ້າ</button></form></div>}
+    {canManage && showAddProduct && <div className="modal-backdrop"><form className="modal product-modal" onSubmit={saveNewProduct}><button type="button" className="close" onClick={() => { stopBarcodeCamera(); setShowAddProduct(false) }}>×</button><span className="modal-icon">+</span><h2>ເພີ່ມສິນຄ້າໃໝ່</h2><p>ສຳລັບ owner/admin ເທົ່ານັ້ນ.</p><label>Barcode<div className="barcode-row"><input name="barcode" value={newBarcode} onChange={(e) => setNewBarcode(e.target.value.trim())} placeholder="ສະແກນ ຫຼື ພິມ Barcode" required autoFocus /><button type="button" onClick={cameraMode ? stopBarcodeCamera : startBarcodeCamera}>{cameraMode ? 'ປິດກ້ອງ' : 'ເປີດກ້ອງ'}</button></div></label>{cameraMode && <video className="scanner-video" ref={videoRef} muted playsInline />}<label>ຊື່ສິນຄ້າ<input name="name" required /></label><div className="form-row"><label>ຕົ້ນທຶນ<input name="cost" type="number" min="0" step="1" required /></label><label>ລາຄາຂາຍ<input name="price" type="number" min="1" step="1" required /></label></div><div className="form-row"><label>ຈຳນວນເລີ່ມຕົ້ນ<input name="stock" type="number" min="0" step="1" defaultValue="0" /></label><label>ຫົວໜ່ວຍ<input name="unit" defaultValue="ອັນ" /></label></div><div className="validation-note"><strong>ການກວດກ່ອນບັນທຶກ</strong><span>ຫ້າມ Barcode ຊ້ຳ, ລາຄາຕ້ອງຖືກຕ້ອງ, ແລະຈະເຕືອນຖ້າລາຄາຂາຍຕ່ຳກວ່າຕົ້ນທຶນ.</span></div><button className="primary wide">ບັນທຶກສິນຄ້າ</button></form></div>}
     {showPayment && <div className="modal-backdrop"><div className="modal payment-modal" tabIndex={-1} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); confirmPayment() } }}><button type="button" className="close" onClick={() => setShowPayment(false)}>×</button><span className="modal-icon">₭</span><h2>ຊຳລະເງິນ</h2><p>ເລືອກວິທີຈ່າຍ ແລະ ກົດ Enter ເພື່ອຢືນຢັນ.</p><div className="payment-choice"><button type="button" className={paymentMethod === 'cash' ? 'selected' : ''} onClick={() => { setPaymentMethod('cash'); setTimeout(() => cashInputRef.current?.focus(), 50) }}><b>*</b><span>ເງິນສົດ</span></button><button type="button" className={paymentMethod === 'transfer' ? 'selected' : ''} onClick={() => { setPaymentMethod('transfer'); setCash(String(total)) }}><b>-</b><span>ເງິນໂອນ</span></button></div>{paymentMethod === 'cash' && <label>ຮັບເງິນສົດ<input ref={cashInputRef} inputMode="numeric" autoFocus placeholder="0" value={cash} onChange={(e) => setCash(e.target.value.replace(/\D/g,''))} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); confirmPayment() } }}/></label>}{paymentMethod === 'transfer' && <div className="transfer-qr"><img src={`${import.meta.env.BASE_URL}payment-qr.png`} alt="QR Code ສຳລັບໂອນເງິນ" /><strong>ສະແກນ QR ເພື່ອໂອນເງິນ</strong><small>ກວດສອບຍອດເງິນກ່ອນກົດຢືນຢັນ</small></div>}<div className="payment-summary"><span>ລວມ</span><strong>{money(total)}</strong></div>{paymentMethod === 'cash' && <div className="payment-summary change-row"><span>ເງິນທອນ</span><strong>{money(change)}</strong></div>}<button type="button" className={printReceipt ? 'receipt-toggle on' : 'receipt-toggle'} onClick={() => setPrintReceipt((value) => !value)}><b>+</b>{printReceipt ? 'ຮັບບິນ' : 'ບໍ່ຮັບບິນ'}</button><div className="shortcut-help"><span>* ເງິນສົດ</span><span>- ເງິນໂອນ</span><span>+ ສະຫຼັບບິນ</span><span>Enter ຢືນຢັນ</span></div><button type="button" className="primary wide" disabled={isCheckingOut || (paymentMethod === 'cash' && Number(cash || 0) <= 0)} onClick={confirmPayment}>{isCheckingOut ? 'ກຳລັງບັນທຶກ...' : 'ຢືນຢັນຮັບເງິນ'}</button></div></div>}
-    {showStockIn && <div className="modal-backdrop"><form className="modal" onSubmit={stockIn}><button type="button" className="close" onClick={() => setShowStockIn(false)}>×</button><span className="modal-icon">↓</span><h2>ຮັບສິນຄ້າເຂົ້າ</h2><p>ລະບົບຈະຄິດຕົ້ນທຶນສະເລ່ຍໃໝ່ອັດຕະໂນມັດ.</p><label>ເລືອກສິນຄ້າ<select name="productId" required defaultValue={products[0]?.id ?? ''}>{products.length === 0 && <option value="">ຍັງບໍ່ມີສິນຄ້າ</option>}{products.map((p) => <option key={p.id} value={p.id}>{p.name} (ເຫຼືອ {p.stock})</option>)}</select></label><label>ຈຳນວນຮັບເຂົ້າ<input name="quantity" type="number" min="1" step="1" required autoFocus /></label><label>ລາຄາຊື້ຕໍ່ໜ່ວຍ<input name="cost" type="number" min="0" required /></label><button className="primary wide">ບັນທຶກສະຕັອກ</button></form></div>}
-    {editingProduct && <div className="modal-backdrop"><form className="modal product-modal" onSubmit={saveProductEdit}><button type="button" className="close" onClick={() => setEditingProduct(null)}>×</button><span className="modal-icon">✎</span><h2>ແກ້ໄຂສິນຄ້າ</h2><p>ປ່ຽນຊື່, Barcode, ລາຄາ ຫຼື ຈຳນວນສະຕັອກ.</p><label>Barcode<input name="barcode" defaultValue={editingProduct.barcode} required autoFocus /></label><label>ຊື່ສິນຄ້າ<input name="name" defaultValue={editingProduct.name} required /></label><div className="form-row"><label>ຕົ້ນທຶນ<input name="cost" type="number" min="0" step="1" defaultValue={editingProduct.cost} required /></label><label>ລາຄາຂາຍ<input name="price" type="number" min="1" step="1" defaultValue={editingProduct.price} required /></label></div><div className="form-row"><label>ຈຳນວນສະຕັອກ<input name="stock" type="number" min="0" step="1" defaultValue={editingProduct.stock} required /></label><label>ຫົວໜ່ວຍ<input name="unit" defaultValue={editingProduct.unit} /></label></div><button className="primary wide">ບັນທຶກການແກ້ໄຂ</button></form></div>}
-    {adjustingProduct && <div className="modal-backdrop"><form className="modal" onSubmit={removeStock}><button type="button" className="close" onClick={() => setAdjustingProduct(null)}>×</button><span className="modal-icon">−</span><h2>ລົບສະຕັອກ</h2><p>{adjustingProduct.name} ເຫຼືອ {adjustingProduct.stock} {adjustingProduct.unit}</p><label>ຈຳນວນທີ່ຈະລົບ<input name="quantity" type="number" min="1" step="1" required autoFocus /></label><label>ເຫດຜົນ<input name="reason" placeholder="ເສຍຫາຍ / ນັບຜິດ / ສິນຄ້າຫາຍ" /></label><button className="primary wide">ບັນທຶກລົບສະຕັອກ</button></form></div>}
+    {canManage && showStockIn && <div className="modal-backdrop"><form className="modal" onSubmit={stockIn}><button type="button" className="close" onClick={() => setShowStockIn(false)}>×</button><span className="modal-icon">↓</span><h2>ຮັບສິນຄ້າເຂົ້າ</h2><p>ສຳລັບ owner/admin ເທົ່ານັ້ນ. ລະບົບຈະຄິດຕົ້ນທຶນສະເລ່ຍໃໝ່.</p><label>ເລືອກສິນຄ້າ<select name="productId" required defaultValue={products[0]?.id ?? ''}>{products.length === 0 && <option value="">ຍັງບໍ່ມີສິນຄ້າ</option>}{products.map((p) => <option key={p.id} value={p.id}>{p.name} (ເຫຼືອ {p.stock})</option>)}</select></label><label>ຈຳນວນຮັບເຂົ້າ<input name="quantity" type="number" min="1" step="1" required autoFocus /></label><label>ລາຄາຊື້ຕໍ່ໜ່ວຍ<input name="cost" type="number" min="0" required /></label><button className="primary wide">ບັນທຶກສະຕັອກ</button></form></div>}
+    {canManage && editingProduct && <div className="modal-backdrop"><form className="modal product-modal" onSubmit={saveProductEdit}><button type="button" className="close" onClick={() => setEditingProduct(null)}>×</button><span className="modal-icon">✎</span><h2>ແກ້ໄຂສິນຄ້າ</h2><p>ປ່ຽນຊື່, Barcode, ລາຄາ ຫຼື ຈຳນວນສະຕັອກ.</p><label>Barcode<input name="barcode" defaultValue={editingProduct.barcode} required autoFocus /></label><label>ຊື່ສິນຄ້າ<input name="name" defaultValue={editingProduct.name} required /></label><div className="form-row"><label>ຕົ້ນທຶນ<input name="cost" type="number" min="0" step="1" defaultValue={editingProduct.cost} required /></label><label>ລາຄາຂາຍ<input name="price" type="number" min="1" step="1" defaultValue={editingProduct.price} required /></label></div><div className="form-row"><label>ຈຳນວນສະຕັອກ<input name="stock" type="number" min="0" step="1" defaultValue={editingProduct.stock} required /></label><label>ຫົວໜ່ວຍ<input name="unit" defaultValue={editingProduct.unit} /></label></div><button className="primary wide">ບັນທຶກການແກ້ໄຂ</button></form></div>}
+    {canManage && adjustingProduct && <div className="modal-backdrop"><form className="modal" onSubmit={removeStock}><button type="button" className="close" onClick={() => setAdjustingProduct(null)}>×</button><span className="modal-icon">−</span><h2>ລົບສະຕັອກ</h2><p>{adjustingProduct.name} ເຫຼືອ {adjustingProduct.stock} {adjustingProduct.unit}</p><label>ຈຳນວນທີ່ຈະລົບ<input name="quantity" type="number" min="1" step="1" required autoFocus /></label><label>ເຫດຜົນ<input name="reason" placeholder="ເສຍຫາຍ / ນັບຜິດ / ສິນຄ້າຫາຍ" /></label><button className="primary wide">ບັນທຶກລົບສະຕັອກ</button></form></div>}
   </div>
 }
 
