@@ -16,7 +16,7 @@ const authErrorMessage = (message = '') => {
 const money = (value) => new Intl.NumberFormat('lo-LA').format(value) + ' ₭'
 const laoWeekdays = ['ວັນອາທິດ', 'ວັນຈັນ', 'ວັນອັງຄານ', 'ວັນພຸດ', 'ວັນພະຫັດ', 'ວັນສຸກ', 'ວັນເສົາ']
 const laoMonths = ['ມັງກອນ', 'ກຸມພາ', 'ມີນາ', 'ເມສາ', 'ພຶດສະພາ', 'ມິຖຸນາ', 'ກໍລະກົດ', 'ສິງຫາ', 'ກັນຍາ', 'ຕຸລາ', 'ພະຈິກ', 'ທັນວາ']
-const APP_BUILD = 'fix-checkout-enter-20260715'
+const APP_BUILD = 'fix-owner-active-products-20260715'
 
 function PosApp({ user, role = 'worker', onOwnerHome }) {
   const [products, setProducts] = useState([])
@@ -677,26 +677,33 @@ function OwnerDashboard({ user, onOpenPos }) {
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
     const loadOwnerData = async () => {
-      const productResult = await supabase.from('products').select('*').order('name')
+      let productResult = await supabase.from('products').select('*').eq('is_active', true).order('name')
+      if (productResult.error) productResult = await supabase.from('products').select('*').order('name')
       const orderResult = await supabase.from('orders').select('*').gte('created_at', todayStart).order('created_at', { ascending: false })
       const profileResult = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
-      setProducts((productResult.data || []).map(databaseProductToAppProduct))
+      setProducts((productResult.data || []).filter((product) => product.is_active !== false).map(databaseProductToAppProduct))
       setOrders(orderResult.data || [])
-      setProfiles(profileResult.data || [])
+      const normalizedProfiles = (profileResult.data || []).map((profile) => (
+        isOwnerUser(user, profile) ? { ...profile, role: 'owner', status: 'active' } : profile
+      ))
+      setProfiles(normalizedProfiles)
       setLoading(false)
     }
     loadOwnerData()
-  }, [todayStart])
+  }, [todayStart, user])
 
   const lowItems = products.filter((p) => p.stock >= 1 && p.stock <= 5)
   const outItems = products.filter((p) => p.stock <= 0)
   const todaySales = orders.reduce((sum, order) => sum + Number(order.total || 0), 0)
-  const pendingProfiles = profiles.filter((profile) => (profile.status || 'pending') === 'pending' && profile.email !== user?.email)
+  const pendingProfiles = profiles.filter((profile) => (profile.status || 'pending') === 'pending' && !isOwnerUser(user, profile))
   const activeProfiles = profiles.filter((profile) => (profile.status || 'pending') !== 'pending')
 
   const updateProfileAccess = async (profile, updates) => {
     if (!supabase) return
     setOwnerNotice('')
+    if (isOwnerUser(user, profile) && updates.role && updates.role !== 'owner') {
+      return setOwnerNotice('ບໍ່ສາມາດປ່ຽນ role ຂອງ owner ໄດ້')
+    }
     const next = { ...updates, updated_at: new Date().toISOString() }
     const { error } = await supabase.from('profiles').update(next).eq('id', profile.id)
     if (error) return setOwnerNotice('ອັບເດດ user ບໍ່ສຳເລັດ: ' + error.message)
@@ -725,7 +732,10 @@ function OwnerDashboard({ user, onOpenPos }) {
         <div className="user-list">
           {pendingProfiles.length === 0 && <p className="muted-text">ບໍ່ມີຄົນລໍອະນຸມັດ</p>}
           {pendingProfiles.map((profile) => <div className="user-row pending" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>ສະຖານະ: ລໍອະນຸມັດ</small></div><div className="row-actions"><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>ອະນຸມັດ worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>ອະນຸມັດ admin</button><button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>ປະຕິເສດ</button></div></div>)}
-          {activeProfiles.map((profile) => <div className="user-row" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>Role: {profile.role} · Status: {profile.status || 'pending'}</small></div><div className="row-actions"><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>admin</button>{profile.email !== user?.email && <button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>block</button>}</div></div>)}
+          {activeProfiles.map((profile) => {
+            const ownerRow = isOwnerUser(user, profile)
+            return <div className="user-row" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>Role: {ownerRow ? 'owner' : profile.role} · Status: {profile.status || 'pending'}</small></div><div className="row-actions">{ownerRow ? <span className="owner-lock">Owner</span> : <><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>admin</button><button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>block</button></>}</div></div>
+          })}
         </div>
       </section>
       <section className="page-card">
