@@ -4,7 +4,14 @@ import { databaseProductToAppProduct, isSupabaseConfigured, supabase } from './s
 
 const OWNER_EMAILS = ['tofalaleo@gmail.com']
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase()
-const isOwnerUser = (user, profile) => OWNER_EMAILS.includes(normalizeEmail(user?.email || profile?.email)) || profile?.role === 'owner'
+const isOwnerEmail = (email) => OWNER_EMAILS.includes(normalizeEmail(email))
+const isOwnerUser = (user, profile) => isOwnerEmail(user?.email || profile?.email)
+const safeProfile = (profile) => {
+  if (!profile) return profile
+  if (isOwnerEmail(profile.email)) return { ...profile, role: 'owner', status: 'active' }
+  if (profile.role === 'owner') return { ...profile, role: 'worker', status: profile.status === 'blocked' ? 'blocked' : 'active' }
+  return profile
+}
 const authErrorMessage = (message = '') => {
   const text = String(message).toLowerCase()
   if (text.includes('invalid login') || text.includes('invalid credentials')) return 'Email ຫຼື Password ບໍ່ຖືກ. ກະລຸນາກວດ password ໃໝ່.'
@@ -16,7 +23,7 @@ const authErrorMessage = (message = '') => {
 const money = (value) => new Intl.NumberFormat('lo-LA').format(value) + ' ₭'
 const laoWeekdays = ['ວັນອາທິດ', 'ວັນຈັນ', 'ວັນອັງຄານ', 'ວັນພຸດ', 'ວັນພະຫັດ', 'ວັນສຸກ', 'ວັນເສົາ']
 const laoMonths = ['ມັງກອນ', 'ກຸມພາ', 'ມີນາ', 'ເມສາ', 'ພຶດສະພາ', 'ມິຖຸນາ', 'ກໍລະກົດ', 'ສິງຫາ', 'ກັນຍາ', 'ຕຸລາ', 'ພະຈິກ', 'ທັນວາ']
-const APP_BUILD = 'fix-owner-only-manage-20260715'
+const APP_BUILD = 'fix-owner-approval-20260715'
 
 function PosApp({ user, role = 'worker', onOwnerHome }) {
   const [products, setProducts] = useState([])
@@ -701,9 +708,7 @@ function OwnerDashboard({ user, onOpenPos }) {
       const profileResult = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
       setProducts((productResult.data || []).filter((product) => product.is_active !== false).map(databaseProductToAppProduct))
       setOrders(orderResult.data || [])
-      const normalizedProfiles = (profileResult.data || []).map((profile) => (
-        isOwnerUser(user, profile) ? { ...profile, role: 'owner', status: 'active' } : profile
-      ))
+      const normalizedProfiles = (profileResult.data || []).map(safeProfile)
       setProfiles(normalizedProfiles)
       setLoading(false)
     }
@@ -713,19 +718,19 @@ function OwnerDashboard({ user, onOpenPos }) {
   const lowItems = products.filter((p) => p.stock >= 1 && p.stock <= 5)
   const outItems = products.filter((p) => p.stock <= 0)
   const todaySales = orders.reduce((sum, order) => sum + Number(order.total || 0), 0)
-  const pendingProfiles = profiles.filter((profile) => (profile.status || 'pending') === 'pending' && !isOwnerUser(user, profile))
+  const pendingProfiles = profiles.filter((profile) => (profile.status || 'pending') === 'pending' && !isOwnerEmail(profile.email))
   const activeProfiles = profiles.filter((profile) => (profile.status || 'pending') !== 'pending')
 
   const updateProfileAccess = async (profile, updates) => {
     if (!supabase) return
     setOwnerNotice('')
-    if (isOwnerUser(user, profile) && updates.role && updates.role !== 'owner') {
+    if (isOwnerEmail(profile.email) && updates.role && updates.role !== 'owner') {
       return setOwnerNotice('ບໍ່ສາມາດປ່ຽນ role ຂອງ owner ໄດ້')
     }
     const next = { ...updates, updated_at: new Date().toISOString() }
     const { error } = await supabase.from('profiles').update(next).eq('id', profile.id)
     if (error) return setOwnerNotice('ອັບເດດ user ບໍ່ສຳເລັດ: ' + error.message)
-    setProfiles((items) => items.map((item) => item.id === profile.id ? { ...item, ...next } : item))
+    setProfiles((items) => items.map((item) => item.id === profile.id ? safeProfile({ ...item, ...next }) : item))
     setOwnerNotice('ອັບເດດ user ສຳເລັດ: ' + (profile.email || 'user'))
   }
 
@@ -751,8 +756,9 @@ function OwnerDashboard({ user, onOpenPos }) {
           {pendingProfiles.length === 0 && <p className="muted-text">ບໍ່ມີຄົນລໍອະນຸມັດ</p>}
           {pendingProfiles.map((profile) => <div className="user-row pending" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>ສະຖານະ: ລໍອະນຸມັດ</small></div><div className="row-actions"><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>ອະນຸມັດ worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>ອະນຸມັດ admin</button><button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>ປະຕິເສດ</button></div></div>)}
           {activeProfiles.map((profile) => {
-            const ownerRow = isOwnerUser(user, profile)
-            return <div className="user-row" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>Role: {ownerRow ? 'owner' : profile.role} · Status: {profile.status || 'pending'}</small></div><div className="row-actions">{ownerRow ? <span className="owner-lock">Owner</span> : <><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>admin</button><button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>block</button></>}</div></div>
+            const ownerRow = isOwnerEmail(profile.email)
+            const displayRole = ownerRow ? 'owner' : (profile.role === 'owner' ? 'worker' : profile.role)
+            return <div className="user-row" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>Role: {displayRole} · Status: {profile.status || 'pending'}</small></div><div className="row-actions">{ownerRow ? <span className="owner-lock">Owner</span> : <><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>admin</button><button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>block</button></>}</div></div>
           })}
         </div>
       </section>
@@ -807,7 +813,7 @@ async function loadProfileForUser(user) {
   const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
   if (!error && data) {
     if (isOwnerUser(user, data)) return { ...data, role: 'owner', status: 'active' }
-    return data
+    return safeProfile(data)
   }
   if (fallback.role === 'owner') return fallback
 
@@ -826,7 +832,7 @@ function App() {
   const [ownerPosMode, setOwnerPosMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const displayMode = new URLSearchParams(window.location.search).get('display') === '1'
-  const effectiveProfile = isOwnerUser(session?.user, profile) ? { ...profile, role: 'owner', status: 'active' } : profile
+  const effectiveProfile = isOwnerUser(session?.user, profile) ? { ...profile, role: 'owner', status: 'active' } : safeProfile(profile)
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
