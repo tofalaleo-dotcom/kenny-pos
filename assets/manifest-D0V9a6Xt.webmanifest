@@ -2,21 +2,21 @@
   "name": "kennyXpay POS",
   "short_name": "kennyXpay",
   "lang": "lo",
-  "id": "./?app=kennyxpay",
-  "start_url": "./?app=kennyxpay",
-  "scope": "./",
+  "id": "../?app=kennyxpay",
+  "start_url": "../?app=kennyxpay",
+  "scope": "../",
   "display": "standalone",
   "background_color": "#f6f8fb",
   "theme_color": "#17223d",
   "icons": [
     {
-      "src": "./icons.svg",
+      "src": "../icons.svg",
       "sizes": "192x192 512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     },
     {
-      "src": "./favicon.svg",
+      "src": "../favicon.svg",
       "sizes": "64x64",
       "type": "image/svg+xml"
     }

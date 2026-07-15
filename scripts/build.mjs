@@ -1,4 +1,4 @@
-import { copyFileSync, cpSync, existsSync, mkdirSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
@@ -27,7 +27,7 @@ if (!existsSync(assets)) mkdirSync(assets)
 cpSync(dist, docs, { recursive: true, force: true })
 cpSync(join(dist, 'assets'), assets, { recursive: true, force: true })
 
-for (const file of ['index.html', 'payment-qr.png', 'sw.js', '_redirects']) {
+for (const file of ['index.html', 'manifest.webmanifest', 'favicon.svg', 'icons.svg', 'payment-qr.png', 'sw.js', '_redirects']) {
   const from = join(dist, file)
   if (existsSync(from)) copyFileSync(from, join(root, file))
 }
@@ -37,3 +37,11 @@ for (const file of ['index.html', 'payment-qr.png', 'sw.js', '_redirects']) {
 // Copy the app shell to 404.html so those requests still load kennyXpay.
 copyFileSync(join(dist, 'index.html'), join(root, '404.html'))
 copyFileSync(join(dist, 'index.html'), join(docs, '404.html'))
+
+const buildId = Date.now()
+for (const htmlFile of [join(root, 'index.html'), join(root, '404.html'), join(docs, 'index.html'), join(docs, '404.html')]) {
+  if (!existsSync(htmlFile)) continue
+  const html = readFileSync(htmlFile, 'utf8')
+    .replace(/href="\.\/assets\/manifest-[^"]+\.webmanifest"/g, `href="./manifest.webmanifest?v=${buildId}"`)
+  writeFileSync(htmlFile, html)
+}
