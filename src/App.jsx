@@ -3,13 +3,13 @@ import './App.css'
 import { databaseProductToAppProduct, isSupabaseConfigured, supabase } from './supabase'
 
 const OWNER_EMAILS = ['tofalaleo@gmail.com']
+const MAX_OWNER_ACCOUNTS = 5
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase()
 const isOwnerEmail = (email) => OWNER_EMAILS.includes(normalizeEmail(email))
-const isOwnerUser = (user, profile) => isOwnerEmail(user?.email || profile?.email)
+const isOwnerUser = (user, profile) => isOwnerEmail(user?.email || profile?.email) || profile?.role === 'owner'
 const safeProfile = (profile) => {
   if (!profile) return profile
   if (isOwnerEmail(profile.email)) return { ...profile, role: 'owner', status: 'active' }
-  if (profile.role === 'owner') return { ...profile, role: 'worker', status: profile.status === 'blocked' ? 'blocked' : 'active' }
   return profile
 }
 const authErrorMessage = (message = '') => {
@@ -23,7 +23,7 @@ const authErrorMessage = (message = '') => {
 const money = (value) => new Intl.NumberFormat('lo-LA').format(value) + ' ₭'
 const laoWeekdays = ['ວັນອາທິດ', 'ວັນຈັນ', 'ວັນອັງຄານ', 'ວັນພຸດ', 'ວັນພະຫັດ', 'ວັນສຸກ', 'ວັນເສົາ']
 const laoMonths = ['ມັງກອນ', 'ກຸມພາ', 'ມີນາ', 'ເມສາ', 'ພຶດສະພາ', 'ມິຖຸນາ', 'ກໍລະກົດ', 'ສິງຫາ', 'ກັນຍາ', 'ຕຸລາ', 'ພະຈິກ', 'ທັນວາ']
-const APP_BUILD = 'fix-owner-approval-20260715'
+const APP_BUILD = 'owner-up-to-5-20260715'
 
 function PosApp({ user, role = 'worker', onOwnerHome }) {
   const [products, setProducts] = useState([])
@@ -720,12 +720,17 @@ function OwnerDashboard({ user, onOpenPos }) {
   const todaySales = orders.reduce((sum, order) => sum + Number(order.total || 0), 0)
   const pendingProfiles = profiles.filter((profile) => (profile.status || 'pending') === 'pending' && !isOwnerEmail(profile.email))
   const activeProfiles = profiles.filter((profile) => (profile.status || 'pending') !== 'pending')
+  const ownerCount = profiles.filter((profile) => (profile.status || 'pending') === 'active' && (isOwnerEmail(profile.email) || profile.role === 'owner')).length
 
   const updateProfileAccess = async (profile, updates) => {
     if (!supabase) return
     setOwnerNotice('')
-    if (isOwnerEmail(profile.email) && updates.role && updates.role !== 'owner') {
-      return setOwnerNotice('ບໍ່ສາມາດປ່ຽນ role ຂອງ owner ໄດ້')
+    const fixedOwner = isOwnerEmail(profile.email)
+    if (fixedOwner && updates.role && updates.role !== 'owner') {
+      return setOwnerNotice('ບໍ່ສາມາດປ່ຽນ role ຂອງ owner ຫຼັກໄດ້')
+    }
+    if (updates.role === 'owner' && !fixedOwner && profile.role !== 'owner' && ownerCount >= MAX_OWNER_ACCOUNTS) {
+      return setOwnerNotice(`Owner ເຕັມແລ້ວ (${MAX_OWNER_ACCOUNTS} ບັນຊີ). ກະລຸນາປ່ຽນ owner ເກົ່າເປັນ worker/admin ກ່ອນ.`)
     }
     const next = { ...updates, updated_at: new Date().toISOString() }
     const { error } = await supabase.from('profiles').update(next).eq('id', profile.id)
@@ -750,15 +755,16 @@ function OwnerDashboard({ user, onOpenPos }) {
         <div className={lowItems.length ? 'alert low' : 'alert low muted'}><span>!</span><div><strong>ສິນຄ້າໃກ້ຈະໝົດ</strong><small>{lowItems.length ? lowItems.map((p) => `${p.name} (${p.stock})`).join(', ') : 'ບໍ່ມີ'}</small></div></div>
       </section>
       <section className="page-card user-access-card">
-        <div className="section-top"><div><h2>ສິດເຂົ້າໃຊ້ງານ</h2><p>Owner ອະນຸມັດບັນຊີໃໝ່ ແລະ ກຳນົດ role: admin / worker.</p></div><strong className="pending-pill">{pendingProfiles.length} ລໍອະນຸມັດ</strong></div>
+        <div className="section-top"><div><h2>ສິດເຂົ້າໃຊ້ງານ</h2><p>Owner ອະນຸມັດບັນຊີໃໝ່ ແລະ ກຳນົດ role: owner / admin / worker. Owner ສູງສຸດ {MAX_OWNER_ACCOUNTS} ບັນຊີ.</p></div><strong className="pending-pill">{pendingProfiles.length} ລໍອະນຸມັດ · Owner {ownerCount}/{MAX_OWNER_ACCOUNTS}</strong></div>
         {ownerNotice && <div className="auth-message">{ownerNotice}</div>}
         <div className="user-list">
           {pendingProfiles.length === 0 && <p className="muted-text">ບໍ່ມີຄົນລໍອະນຸມັດ</p>}
-          {pendingProfiles.map((profile) => <div className="user-row pending" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>ສະຖານະ: ລໍອະນຸມັດ</small></div><div className="row-actions"><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>ອະນຸມັດ worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>ອະນຸມັດ admin</button><button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>ປະຕິເສດ</button></div></div>)}
+          {pendingProfiles.map((profile) => <div className="user-row pending" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>ສະຖານະ: ລໍອະນຸມັດ</small></div><div className="row-actions"><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>ອະນຸມັດ worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>ອະນຸມັດ admin</button><button disabled={ownerCount >= MAX_OWNER_ACCOUNTS} onClick={() => updateProfileAccess(profile, { role: 'owner', status: 'active' })}>ອະນຸມັດ owner</button><button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>ປະຕິເສດ</button></div></div>)}
           {activeProfiles.map((profile) => {
             const ownerRow = isOwnerEmail(profile.email)
-            const displayRole = ownerRow ? 'owner' : (profile.role === 'owner' ? 'worker' : profile.role)
-            return <div className="user-row" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>Role: {displayRole} · Status: {profile.status || 'pending'}</small></div><div className="row-actions">{ownerRow ? <span className="owner-lock">Owner</span> : <><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>admin</button><button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>block</button></>}</div></div>
+            const displayRole = ownerRow ? 'owner' : profile.role
+            const canPromoteOwner = profile.role === 'owner' || ownerCount < MAX_OWNER_ACCOUNTS
+            return <div className="user-row" key={profile.id}><div><strong>{profile.email || 'ບໍ່ມີ email'}</strong><small>Role: {displayRole} · Status: {profile.status || 'pending'}</small></div><div className="row-actions">{ownerRow ? <span className="owner-lock">Owner ຫຼັກ</span> : <><button onClick={() => updateProfileAccess(profile, { role: 'worker', status: 'active' })}>worker</button><button onClick={() => updateProfileAccess(profile, { role: 'admin', status: 'active' })}>admin</button><button disabled={!canPromoteOwner} onClick={() => updateProfileAccess(profile, { role: 'owner', status: 'active' })}>owner</button><button className="danger-link" onClick={() => updateProfileAccess(profile, { status: 'blocked' })}>block</button></>}</div></div>
           })}
         </div>
       </section>
