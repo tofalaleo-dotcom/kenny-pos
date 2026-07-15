@@ -31,3 +31,9 @@ for (const file of ['index.html', 'payment-qr.png', 'sw.js', '_redirects']) {
   const from = join(dist, file)
   if (existsSync(from)) copyFileSync(from, join(root, file))
 }
+
+// GitHub Pages shows its own "404 File not found" page when a user opens
+// an app route or a cached URL that does not map to a physical file.
+// Copy the app shell to 404.html so those requests still load kennyXpay.
+copyFileSync(join(dist, 'index.html'), join(root, '404.html'))
+copyFileSync(join(dist, 'index.html'), join(docs, '404.html'))
